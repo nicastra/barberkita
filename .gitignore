@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Build and test output
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local database data and dumps
+.postgres-data/
+*.dump
+*.sql.gz
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log

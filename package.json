@@ -1,0 +1,26 @@
+{
+  "name": "cukurpro",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '@cukurpro/*' dev",
+    "build": "bun run --filter '@cukurpro/*' build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "bun run --filter '@cukurpro/*' typecheck",
+    "test": "bun run --filter '@cukurpro/*' test",
+    "check": "bun run format:check && bun run typecheck && bun run test && bun run build",
+    "db:generate": "bun run --cwd server db:generate",
+    "db:migrate": "bun run --cwd server db:migrate",
+    "db:seed": "bun run --cwd server db:seed"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "prettier-plugin-tailwindcss": "^0.6.14",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

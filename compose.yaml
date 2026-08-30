@@ -1,0 +1,23 @@
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cukurpro}
+      POSTGRES_USER: ${POSTGRES_USER:-cukurpro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cukurpro_dev}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - cukurpro_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_USER:-cukurpro} -d ${POSTGRES_DB:-cukurpro}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cukurpro_postgres_data:
