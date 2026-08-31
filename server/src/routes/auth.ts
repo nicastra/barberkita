@@ -9,7 +9,11 @@ import {
   staffIdSchema,
   updateStaffSchema,
 } from '../schemas/auth';
-import type { AuthService, AuthUser } from '../services/auth-service';
+import {
+  AuthDomainError,
+  type AuthService,
+  type AuthUser,
+} from '../services/auth-service';
 
 function publicUser(user: AuthUser) {
   return {
@@ -21,10 +25,25 @@ function publicUser(user: AuthUser) {
   };
 }
 
-export function createAuthRoutes(authService: AuthService) {
+function sessionCookie(token: string, secure: boolean, maxAge: number): string {
+  return `cukurpro_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+}
+
+export function createAuthRoutes(
+  authService: AuthService,
+  secureCookies = false,
+) {
   const app = new Hono<{
     Variables: { user: AuthUser; sessionToken: string };
   }>();
+  app.onError((error, context) => {
+    if (error instanceof AuthDomainError)
+      return context.json(
+        { error: { code: error.code, message: error.message } },
+        error.status,
+      );
+    throw error;
+  });
   app.post('/sign-in', zValidator('json', signInSchema), async (context) => {
     const result = await authService.signIn(
       context.req.valid('json').email,
@@ -42,7 +61,7 @@ export function createAuthRoutes(authService: AuthService) {
       );
     context.header(
       'Set-Cookie',
-      `cukurpro_session=${result.token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`,
+      sessionCookie(result.token, secureCookies, 604_800),
     );
     return context.json({ user: publicUser(result.user) });
   });
@@ -65,10 +84,7 @@ export function createAuthRoutes(authService: AuthService) {
   });
   app.post('/sign-out', requireAuth(authService), async (context) => {
     await authService.signOut(context.get('sessionToken'));
-    context.header(
-      'Set-Cookie',
-      'cukurpro_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0',
-    );
+    context.header('Set-Cookie', sessionCookie('', secureCookies, 0));
     return context.body(null, 204);
   });
   app.get('/me', requireAuth(authService), (context) =>

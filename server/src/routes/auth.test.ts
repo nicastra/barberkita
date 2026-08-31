@@ -69,4 +69,46 @@ describe('authentication boundaries', () => {
     });
     expect(response.status).toBe(403);
   });
+
+  it('sets an explicitly secure production session cookie', async () => {
+    const service = authStub(owner);
+    service.signIn = async () => ({ user: owner, token: 'session-token' });
+    const response = await createAuthRoutes(service, true).request('/sign-in', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'owner@example.com',
+        password: 'OwnerPassword123!',
+      }),
+    });
+    expect(response.headers.get('Set-Cookie')).toContain(
+      'HttpOnly; Path=/; SameSite=Lax; Max-Age=604800; Secure',
+    );
+  });
+
+  it('rejects an oversized body before authentication parsing', async () => {
+    const response = await createApp({
+      allowedOrigins: [],
+      maxRequestBodyBytes: 1_024,
+      healthService: {
+        check: async () => ({
+          status: 'ok',
+          services: { api: 'ok', database: 'ok' },
+          timestamp: new Date().toISOString(),
+        }),
+      },
+      authService: authStub(null),
+    }).request('/api/auth/sign-in', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'owner@example.com',
+        password: 'x'.repeat(2_000),
+      }),
+    });
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'REQUEST_TOO_LARGE' },
+    });
+  });
 });

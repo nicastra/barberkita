@@ -3,7 +3,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
 
 import type { Database } from '../db/client';
-import { auditLogs, sessions, shops, staffUsers } from '../db/schema';
+import {
+  auditLogs,
+  sessions,
+  shops,
+  staffUsers,
+  systemMetadata,
+} from '../db/schema';
 
 export interface AuthUser {
   id: string;
@@ -61,6 +67,19 @@ interface PasswordService {
   verify(value: string, hash: string): Promise<boolean>;
 }
 
+export type AuthErrorCode =
+  'FORBIDDEN' | 'STAFF_EMAIL_CONFLICT' | 'LAST_OWNER_REQUIRED';
+
+export class AuthDomainError extends Error {
+  public constructor(
+    public readonly code: AuthErrorCode,
+    message: string,
+    public readonly status: 403 | 409,
+  ) {
+    super(message);
+  }
+}
+
 const passwordService: PasswordService = {
   hash: (value) => Bun.password.hash(value),
   verify: (value, hash) => Bun.password.verify(value, hash),
@@ -82,6 +101,60 @@ function toUser(row: typeof staffUsers.$inferSelect): AuthUser {
   };
 }
 
+function assertOwner(actor: AuthUser): void {
+  if (actor.role !== 'owner')
+    throw new AuthDomainError('FORBIDDEN', 'Owner access is required.', 403);
+}
+
+function hasDatabaseCode(error: unknown, code: string): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (
+      typeof current === 'object' &&
+      current !== null &&
+      'code' in current &&
+      current.code === code
+    )
+      return true;
+    current =
+      typeof current === 'object' && current !== null && 'cause' in current
+        ? current.cause
+        : null;
+  }
+  return false;
+}
+
+type AuthTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+async function activeOwnerCount(
+  transaction: AuthTransaction,
+  shopId: string,
+): Promise<number> {
+  const [row] = await transaction
+    .select({ count: sql<number>`count(*)` })
+    .from(staffUsers)
+    .where(
+      and(
+        eq(staffUsers.shopId, shopId),
+        eq(staffUsers.role, 'owner'),
+        eq(staffUsers.active, true),
+      ),
+    );
+  return Number(row?.count ?? 0);
+}
+
+async function lockShop(
+  transaction: AuthTransaction,
+  shopId: string,
+): Promise<void> {
+  await transaction
+    .select({ id: shops.id })
+    .from(shops)
+    .where(eq(shops.id, shopId))
+    .for('update')
+    .limit(1);
+}
+
 export function createAuthService(
   database: Database,
   passwords: PasswordService = passwordService,
@@ -93,6 +166,12 @@ export function createAuthService(
           .select({ count: sql<number>`count(*)` })
           .from(staffUsers);
         if (Number(countRow?.count ?? 0) > 0) return null;
+        const [claim] = await transaction
+          .insert(systemMetadata)
+          .values({ key: 'initial_owner_setup', value: 'complete' })
+          .onConflictDoNothing({ target: systemMetadata.key })
+          .returning({ id: systemMetadata.id });
+        if (!claim) return null;
         const [shop] = await transaction
           .insert(shops)
           .values(input.shop)
@@ -177,26 +256,41 @@ export function createAuthService(
       return row ? toUser(row.user) : null;
     },
     async createStaff(actor, input) {
-      const [row] = await database
-        .insert(staffUsers)
-        .values({
-          shopId: actor.shopId,
-          name: input.name,
-          email: input.email.toLowerCase(),
-          passwordHash: await passwords.hash(input.password),
-          role: input.role,
-        })
-        .returning();
-      if (!row) throw new Error('Staff creation failed.');
-      await database.insert(auditLogs).values({
-        actorStaffUserId: actor.id,
-        action: 'staff_created',
-        entityType: 'staff_user',
-        entityId: row.id,
-      });
-      return toUser(row);
+      assertOwner(actor);
+      const passwordHash = await passwords.hash(input.password);
+      try {
+        return await database.transaction(async (transaction) => {
+          const [row] = await transaction
+            .insert(staffUsers)
+            .values({
+              shopId: actor.shopId,
+              name: input.name,
+              email: input.email.toLowerCase(),
+              passwordHash,
+              role: input.role,
+            })
+            .returning();
+          if (!row) throw new Error('Staff creation failed.');
+          await transaction.insert(auditLogs).values({
+            actorStaffUserId: actor.id,
+            action: 'staff_created',
+            entityType: 'staff_user',
+            entityId: row.id,
+          });
+          return toUser(row);
+        });
+      } catch (error) {
+        if (hasDatabaseCode(error, '23505'))
+          throw new AuthDomainError(
+            'STAFF_EMAIL_CONFLICT',
+            'A staff account already uses this email address.',
+            409,
+          );
+        throw error;
+      }
     },
     async listStaff(actor) {
+      assertOwner(actor);
       const rows = await database
         .select()
         .from(staffUsers)
@@ -204,50 +298,109 @@ export function createAuthService(
       return rows.map(toUser);
     },
     async updateStaff(actor, id, input) {
-      const existing = await database
-        .select()
-        .from(staffUsers)
-        .where(and(eq(staffUsers.id, id), eq(staffUsers.shopId, actor.shopId)))
-        .limit(1)
-        .then((rows) => rows[0]);
-      if (!existing) return null;
-      const update: Partial<typeof staffUsers.$inferInsert> = {
-        updatedAt: new Date(),
-      };
-      if (input.name !== undefined) update.name = input.name;
-      if (input.email !== undefined) update.email = input.email.toLowerCase();
-      if (input.role !== undefined) update.role = input.role;
-      if (input.active !== undefined) update.active = input.active;
-      if (input.password !== undefined)
-        update.passwordHash = await passwords.hash(input.password);
-      const [row] = await database
-        .update(staffUsers)
-        .set(update)
-        .where(eq(staffUsers.id, id))
-        .returning();
-      if (!row) return null;
-      await database.insert(auditLogs).values({
-        actorStaffUserId: actor.id,
-        action: 'staff_updated',
-        entityType: 'staff_user',
-        entityId: id,
-      });
-      return toUser(row);
+      assertOwner(actor);
+      const passwordHash =
+        input.password === undefined
+          ? undefined
+          : await passwords.hash(input.password);
+      try {
+        return await database.transaction(async (transaction) => {
+          const existing = await transaction
+            .select()
+            .from(staffUsers)
+            .where(
+              and(eq(staffUsers.id, id), eq(staffUsers.shopId, actor.shopId)),
+            )
+            .limit(1)
+            .then((rows) => rows[0]);
+          if (!existing) return null;
+          const removesActiveOwner =
+            existing.role === 'owner' &&
+            existing.active &&
+            (input.role === 'staff' || input.active === false);
+          if (removesActiveOwner) {
+            await lockShop(transaction, actor.shopId);
+            if ((await activeOwnerCount(transaction, actor.shopId)) <= 1)
+              throw new AuthDomainError(
+                'LAST_OWNER_REQUIRED',
+                'The shop must retain at least one active owner.',
+                409,
+              );
+          }
+          const update: Partial<typeof staffUsers.$inferInsert> = {
+            updatedAt: new Date(),
+          };
+          if (input.name !== undefined) update.name = input.name;
+          if (input.email !== undefined)
+            update.email = input.email.toLowerCase();
+          if (input.role !== undefined) update.role = input.role;
+          if (input.active !== undefined) update.active = input.active;
+          if (passwordHash !== undefined) update.passwordHash = passwordHash;
+          const [row] = await transaction
+            .update(staffUsers)
+            .set(update)
+            .where(eq(staffUsers.id, id))
+            .returning();
+          if (!row) return null;
+          if (passwordHash !== undefined || input.active === false)
+            await transaction
+              .delete(sessions)
+              .where(eq(sessions.staffUserId, id));
+          await transaction.insert(auditLogs).values({
+            actorStaffUserId: actor.id,
+            action: 'staff_updated',
+            entityType: 'staff_user',
+            entityId: id,
+          });
+          return toUser(row);
+        });
+      } catch (error) {
+        if (hasDatabaseCode(error, '23505'))
+          throw new AuthDomainError(
+            'STAFF_EMAIL_CONFLICT',
+            'A staff account already uses this email address.',
+            409,
+          );
+        throw error;
+      }
     },
     async deleteStaff(actor, id) {
+      assertOwner(actor);
       if (id === actor.id) return false;
-      const result = await database
-        .delete(staffUsers)
-        .where(and(eq(staffUsers.id, id), eq(staffUsers.shopId, actor.shopId)))
-        .returning({ id: staffUsers.id });
-      if (result.length)
-        await database.insert(auditLogs).values({
-          actorStaffUserId: actor.id,
-          action: 'staff_deleted',
-          entityType: 'staff_user',
-          entityId: id,
-        });
-      return result.length > 0;
+      return database.transaction(async (transaction) => {
+        const existing = await transaction
+          .select({ role: staffUsers.role, active: staffUsers.active })
+          .from(staffUsers)
+          .where(
+            and(eq(staffUsers.id, id), eq(staffUsers.shopId, actor.shopId)),
+          )
+          .limit(1)
+          .then((rows) => rows[0]);
+        if (!existing) return false;
+        if (existing.role === 'owner' && existing.active) {
+          await lockShop(transaction, actor.shopId);
+          if ((await activeOwnerCount(transaction, actor.shopId)) <= 1)
+            throw new AuthDomainError(
+              'LAST_OWNER_REQUIRED',
+              'The shop must retain at least one active owner.',
+              409,
+            );
+        }
+        const result = await transaction
+          .delete(staffUsers)
+          .where(
+            and(eq(staffUsers.id, id), eq(staffUsers.shopId, actor.shopId)),
+          )
+          .returning({ id: staffUsers.id });
+        if (result.length)
+          await transaction.insert(auditLogs).values({
+            actorStaffUserId: actor.id,
+            action: 'staff_deleted',
+            entityType: 'staff_user',
+            entityId: id,
+          });
+        return result.length > 0;
+      });
     },
   };
 }

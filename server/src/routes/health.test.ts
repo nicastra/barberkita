@@ -19,6 +19,7 @@ describe('GET /api/health', () => {
     const response = await app.request('/api/health');
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     await expect(response.json()).resolves.toEqual({
       status: 'ok',
       services: { api: 'ok', database: 'ok' },

@@ -1,6 +1,6 @@
 # Phase 5: Checkout and Payments
 
-**Status: Planned**
+**Status: Completed**
 
 [Previous: Phase 4](phase-4-daily-operations.md) · [Roadmap index](README.md) · [Next: Phase 6](phase-6-dashboard-reporting.md)
 
@@ -27,6 +27,19 @@ customers paid without introducing online payment processing.
   record and records the reason and actor.
 - Checkout UI with explicit unpaid, paid, validation, duplicate, and error
   states.
+
+## TODO
+
+### Checkout
+
+- [x] Add checkout totals and integer-rupiah payment recording.
+- [x] Add payment methods, partial payments, and receipt details.
+- [x] Add refunds and transaction correction rules with audit history.
+
+### Staff workspace and quality
+
+- [x] Add staff-facing checkout screens through the centralized API layer.
+- [x] Add the Drizzle migration and focused payment and correction tests.
 
 ## Acceptance criteria
 

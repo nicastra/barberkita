@@ -2,7 +2,11 @@
 
 CukurPro is a single-shop barbershop management MVP. The Bun workspace contains
 a Hono API, React client, and a PostgreSQL database managed with Drizzle
-migrations. Phase 1 adds staff authentication and shop setup.
+migrations. Phases 1–7 provide staff authentication, shop setup, the service
+catalog, barber schedules, authoritative availability calculations, customer
+records, conflict-safe staff/public bookings, day-of operational tracking, and
+auditable checkout/payment recording, reporting, security hardening, and
+production operations.
 
 ## Prerequisites
 
@@ -61,7 +65,7 @@ The application shell reports three distinct states: checking connectivity,
 fully operational, or an API/database connection problem. A database failure
 returns a generic degraded response and never returns connection details.
 
-## Phase 1 API
+## Staff setup and availability API
 
 The first owner can initialize the shop once with `POST /api/auth/setup`. Staff
 then use `POST /api/auth/sign-in`, `POST /api/auth/sign-out`, and `GET
@@ -75,36 +79,79 @@ workspace with editable shop profile fields, staff account creation, role
 changes, and account removal. Non-owner staff only see the sign-in/session
 controls and cannot access that workspace.
 
+Authenticated staff can read `/api/services`, `/api/barbers`, and
+`/api/availability`. Owners manage catalog records, durable barber profiles,
+service eligibility, weekly hours, recurring breaks, and dated schedule
+exceptions through the service and barber endpoints. Prices use integer rupiah,
+and availability results are calculated in the shop timezone while excluding
+ineligible or inactive resources, breaks, time off, and supplied reservation
+intervals. The browser exposes these controls in the protected Schedule page.
+
+Authenticated staff can search and maintain customers through `/api/customers`
+and manage the booking lifecycle through `/api/bookings`. Appointment moments
+are stored as UTC timestamps, validated against current availability, and
+protected by a PostgreSQL exclusion constraint so concurrent requests receive
+the stable `BOOKING_TIME_UNAVAILABLE` conflict. Public customers use
+`/api/public/options`, `/api/public/availability`, and
+`/api/public/bookings`; the browser exposes this flow at `/book` and the staff
+workspace at `/bookings`.
+
+The same appointment workspace provides a selected-day queue with barber and
+status filters, walk-in intake, and controlled `confirmed → checked_in →
+in_service → completed` transitions. Staff can also cancel or mark an eligible
+appointment as `no_show`; each operational transition stores its timestamp and
+actor in the booking record and audit event history.
+
+Completed appointments can be checked out through `/api/checkouts` and the
+protected Checkout screen. A receipt snapshots the service description and
+integer-rupiah price, supports partial payments with idempotency keys, and keeps
+owner-only void/refund corrections as append-only records. Searchable receipt
+details show the appointment, customer, barber, payment methods, references, and
+remaining balance; no online payment gateway is involved.
+
+Authenticated staff can open the Dashboard page or call `/api/dashboard` for
+the selected shop day. `/api/reports/revenue` and `/api/reports/performance`
+provide timezone-aware summaries using inclusive calendar dates and append-only
+payment corrections.
+
 ## Environment variables
 
-| File          | Variable            | Purpose                                         |
-| ------------- | ------------------- | ----------------------------------------------- |
-| `.env`        | `POSTGRES_DB`       | Local Compose database name                     |
-| `.env`        | `POSTGRES_USER`     | Local Compose database user                     |
-| `.env`        | `POSTGRES_PASSWORD` | Local-only Compose password                     |
-| `.env`        | `POSTGRES_PORT`     | Host port exposed by Compose                    |
-| `server/.env` | `PORT`              | Hono API port                                   |
-| `server/.env` | `DATABASE_URL`      | PostgreSQL connection URL                       |
-| `server/.env` | `ALLOWED_ORIGINS`   | Comma-separated browser origins allowed by CORS |
-| `client/.env` | `VITE_API_BASE_URL` | Base URL used by the centralized API client     |
+| File          | Variable                 | Purpose                                         |
+| ------------- | ------------------------ | ----------------------------------------------- |
+| `.env`        | `POSTGRES_DB`            | Local Compose database name                     |
+| `.env`        | `POSTGRES_USER`          | Local Compose database user                     |
+| `.env`        | `POSTGRES_PASSWORD`      | Local-only Compose password                     |
+| `.env`        | `POSTGRES_PORT`          | Host port exposed by Compose                    |
+| `server/.env` | `PORT`                   | Hono API port                                   |
+| `server/.env` | `DATABASE_URL`           | PostgreSQL connection URL                       |
+| `server/.env` | `ALLOWED_ORIGINS`        | Comma-separated browser origins allowed by CORS |
+| `server/.env` | `NODE_ENV`               | Enables secure production cookies and logging   |
+| `server/.env` | `AUTH_RATE_LIMIT`        | Sign-in/setup requests permitted per window     |
+| `server/.env` | `PUBLIC_RATE_LIMIT`      | Public booking requests permitted per window    |
+| `server/.env` | `RATE_LIMIT_WINDOW_MS`   | Abuse-control window in milliseconds            |
+| `server/.env` | `MAX_REQUEST_BODY_BYTES` | Maximum API request body size                   |
+| `client/.env` | `VITE_API_BASE_URL`      | Base URL used by the centralized API client     |
 
 All server environment input is validated at startup. Keep real credentials in
 untracked `.env` files or the deployment platform's secret manager.
 
 ## Workspace commands
 
-| Command                | Purpose                                              |
-| ---------------------- | ---------------------------------------------------- |
-| `bun run dev`          | Run the client and server in watch mode              |
-| `bun run format`       | Format the workspace                                 |
-| `bun run format:check` | Check formatting without modifying files             |
-| `bun run typecheck`    | Strictly type-check both applications                |
-| `bun run test`         | Run backend and frontend tests                       |
-| `bun run build`        | Create production builds for both applications       |
-| `bun run check`        | Run formatting, types, tests, and builds             |
-| `bun run db:generate`  | Generate a migration after a reviewed schema change  |
-| `bun run db:migrate`   | Apply committed migrations to `DATABASE_URL`         |
-| `bun run db:seed`      | Upsert local demo shop and owner/staff test accounts |
+| Command                 | Purpose                                               |
+| ----------------------- | ----------------------------------------------------- |
+| `bun run dev`           | Run the client and server in watch mode               |
+| `bun run format`        | Format the workspace                                  |
+| `bun run format:check`  | Check formatting without modifying files              |
+| `bun run typecheck`     | Strictly type-check both applications                 |
+| `bun run test`          | Run backend and frontend tests                        |
+| `bun run test:e2e`      | Run clean-DB HTTP acceptance and restore drill        |
+| `bun run build`         | Create production builds for both applications        |
+| `bun run check`         | Run formatting, types, tests, and builds              |
+| `bun run deploy:check`  | Validate scripts and production Compose configuration |
+| `bun run check:release` | Run code, real-database, restore, and deploy checks   |
+| `bun run db:generate`   | Generate a migration after a reviewed schema change   |
+| `bun run db:migrate`    | Apply committed migrations to `DATABASE_URL`          |
+| `bun run db:seed`       | Upsert local demo shop and owner/staff test accounts  |
 
 Generated migrations are committed under `server/drizzle/`. Never edit an
 already-applied migration; change the Drizzle schema and generate a new one.
@@ -112,8 +159,11 @@ already-applied migration; change the Drizzle schema and generate a new one.
 ## Production builds
 
 Run `bun run build`. The static client output is written to `client/dist/`, and
-the Bun server bundle is written to `server/dist/`. Deployment configuration and
-production operations are intentionally deferred to Phase 7.
+the Bun server bundle is written to `server/dist/`. Production images and the
+migration-gated Compose stack are documented in
+[production operations](docs/operations/production.md); backup and restore
+ownership is documented separately in
+[backup and restore](docs/operations/backup-restore.md).
 
 ## Troubleshooting
 

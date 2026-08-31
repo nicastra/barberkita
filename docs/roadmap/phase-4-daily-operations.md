@@ -1,6 +1,6 @@
 # Phase 4: Daily Operations
 
-**Status: Planned**
+**Status: Completed**
 
 [Previous: Phase 3](phase-3-customers-bookings.md) · [Roadmap index](README.md) · [Next: Phase 5](phase-5-checkout-payments.md)
 
@@ -27,6 +27,19 @@ from arrival through service completion or cancellation.
   permission, and error states.
 - Preservation of operational timestamps and the staff actor for significant
   status changes.
+
+## TODO
+
+### Daily workflow
+
+- [x] Add appointment-day views and operational status transitions.
+- [x] Add walk-in intake and queue management for the active shop day.
+- [x] Add check-in, in-service, completed, and no-show handling.
+
+### Staff workspace and quality
+
+- [x] Add staff-facing daily operations screens through the centralized API layer.
+- [x] Add the Drizzle migration and focused operational lifecycle tests.
 
 ## Acceptance criteria
 

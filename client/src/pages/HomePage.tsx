@@ -9,10 +9,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
-const upcomingCapabilities = [
+const availableCapabilities = [
   'Secure staff access and shop setup',
-  'Services, schedules, and bookings',
-  'Daily operations and checkout',
+  'Service and barber management',
+  'Schedules and availability',
 ];
 
 export function HomePage() {
@@ -24,15 +24,15 @@ export function HomePage() {
           <div className="text-primary-foreground/75 flex items-center gap-2">
             <Sparkles className="size-4" aria-hidden="true" />
             <span className="text-xs font-semibold uppercase tracking-widest">
-              Foundation in place
+              Scheduling foundation in place
             </span>
           </div>
           <CardTitle className="text-2xl">
-            Ready for the first shop workflow.
+            Ready to build customer bookings.
           </CardTitle>
           <CardDescription className="text-primary-foreground/70">
-            The client, API, database migrations, and quality checks now share
-            one Bun workspace.
+            Services, eligible barbers, local schedules, and authoritative slot
+            calculations now share one protected workspace.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -50,18 +50,18 @@ export function HomePage() {
           </div>
         </CardContent>
       </Card>
-      <section aria-labelledby="upcoming-heading" className="space-y-4">
+      <section aria-labelledby="available-heading" className="space-y-4">
         <div className="flex items-center gap-3">
           <CalendarDays
             className="text-muted-foreground size-5"
             aria-hidden="true"
           />
-          <h2 id="upcoming-heading" className="font-semibold">
-            Coming next
+          <h2 id="available-heading" className="font-semibold">
+            Available now
           </h2>
         </div>
         <div className="grid gap-3">
-          {upcomingCapabilities.map((capability, index) => (
+          {availableCapabilities.map((capability, index) => (
             <div
               key={capability}
               className="border-border bg-card flex items-center justify-between rounded-xl border px-4 py-3.5"

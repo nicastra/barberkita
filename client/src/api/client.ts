@@ -8,11 +8,13 @@ const environment = clientEnvironmentSchema.parse(import.meta.env);
 
 export class ApiError extends Error {
   public readonly status: number | undefined;
+  public readonly code: string | undefined;
 
-  public constructor(message: string, status?: number) {
+  public constructor(message: string, status?: number, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -20,7 +22,7 @@ export interface ApiRequestOptions<T> {
   schema: z.ZodType<T>;
   acceptedStatuses?: number[];
   signal?: AbortSignal | undefined;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
 }
 
@@ -62,7 +64,16 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok && !acceptedStatuses.includes(response.status)) {
-    throw new ApiError('The API request failed.', response.status);
+    const error = z
+      .object({
+        error: z.object({ code: z.string(), message: z.string() }),
+      })
+      .safeParse(payload);
+    throw new ApiError(
+      error.success ? error.data.error.message : 'The API request failed.',
+      response.status,
+      error.success ? error.data.error.code : undefined,
+    );
   }
 
   const parsed = schema.safeParse(payload);

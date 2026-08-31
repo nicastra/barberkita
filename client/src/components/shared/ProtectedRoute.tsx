@@ -46,7 +46,7 @@ export function ProtectedRoute({
 
   if (ownerOnly && user.role !== 'owner') {
     return (
-      <Card>
+      <Card role="alert">
         <CardHeader>
           <CardTitle>Owner access required</CardTitle>
           <CardDescription>

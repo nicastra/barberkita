@@ -19,6 +19,8 @@ barberkita/
 │   │   ├── main.tsx            # Browser entry point
 │   │   └── index.css           # Tailwind and theme variables
 │   ├── .env.example
+│   ├── Dockerfile              # Production static-client image
+│   ├── nginx.conf              # SPA and client health configuration
 │   ├── components.json         # shadcn/ui configuration
 │   └── vite.config.ts
 ├── server/                     # Hono API
@@ -32,9 +34,15 @@ barberkita/
 │   │   └── index.ts            # Environment wiring and server entry point
 │   ├── drizzle/                # Generated SQL migrations
 │   ├── .env.example
+│   ├── Dockerfile              # API runtime and migration image targets
 │   └── drizzle.config.ts
 ├── docs/                       # Project documentation
+├── deploy/                     # Safe production environment templates
+├── e2e/                        # Real-database HTTP acceptance tests
+├── scripts/                    # Release, backup, and restore automation
 ├── compose.yaml                # Local PostgreSQL service
+├── compose.e2e.yaml            # Disposable acceptance-test database
+├── compose.production.yaml     # Migration-gated production services
 ├── package.json                # Workspace scripts and dependencies
 ├── README.md                   # Setup and command reference
 └── AGENTS.md                   # Short instructions for coding agents

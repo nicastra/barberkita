@@ -1,6 +1,6 @@
 # Phase 2: Services, Staff, and Availability
 
-**Status: Planned**
+**Status: Completed**
 
 [Previous: Phase 1](phase-1-authentication-shop-setup.md) · [Roadmap index](README.md) · [Next: Phase 3](phase-3-customers-bookings.md)
 
@@ -24,6 +24,26 @@ booked so appointment creation has a dependable source of availability.
 - A server-side availability service that evaluates shop timezone, duration,
   eligibility, working hours, exceptions, and existing reservations.
 - Staff-facing schedule management using the centralized frontend API layer.
+
+## TODO
+
+### Services and barbers
+
+- [x] Add service catalog persistence and protected management endpoints.
+- [x] Add durable barber profiles linked optionally to staff accounts.
+- [x] Add explicit service-to-barber eligibility assignments.
+
+### Scheduling and availability
+
+- [x] Add weekly working hours, recurring breaks, and dated schedule exceptions.
+- [x] Add timezone-aware availability queries with eligibility and duration checks.
+- [x] Exclude breaks, time off, and reservation intervals from offered slots.
+
+### Staff workspace and quality
+
+- [x] Add staff-facing service and schedule management screens through the centralized API layer.
+- [x] Add the Drizzle migration for Phase 2 scheduling tables and constraints.
+- [x] Add focused tests for authorization, inactive resources, and unavailable time ranges.
 
 ## Acceptance criteria
 

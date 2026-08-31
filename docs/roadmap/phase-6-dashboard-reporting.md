@@ -1,6 +1,6 @@
 # Phase 6: Dashboard and Reporting
 
-**Status: Planned**
+**Status: Completed**
 
 [Previous: Phase 5](phase-5-checkout-payments.md) · [Roadmap index](README.md) · [Next: Phase 7](phase-7-hardening-release.md)
 
@@ -27,6 +27,28 @@ the shop understand today's workload, revenue, and service performance.
   inclusion rules.
 - Responsive dashboard and report views with explicit loading, empty, partial,
   permission, and error states.
+
+## TODO
+
+### Dashboard and summaries
+
+- [x] Add the daily operational dashboard and drill-down appointment views.
+- [x] Add timezone-aware revenue summaries reconciled to valid transactions.
+- [x] Add staff and service performance summaries with documented definitions.
+
+### Staff workspace and quality
+
+- [x] Add responsive dashboard and report screens through the centralized API layer.
+- [x] Add focused tests for date boundaries, corrections, permissions, and empty ranges.
+
+### Reporting definitions
+
+- Date filters use the shop's IANA timezone. The selected start date begins at
+  local midnight and the selected end date ends at the following local
+  midnight, exclusive in database queries.
+- Revenue sums recorded payments and subtracts append-only refunds or voids once.
+- Performance counts scheduled bookings and completions, attributing net
+  checkout payments to each booking's barber and service.
 
 ## Acceptance criteria
 

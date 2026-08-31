@@ -30,6 +30,10 @@ describe('application shell', () => {
     render(<App />);
 
     expect(
+      screen.getByRole('link', { name: 'Skip to main content' }),
+    ).toHaveAttribute('href', '#main-content');
+
+    expect(
       screen.getByText('Checking API and database connectivity…'),
     ).toBeInTheDocument();
   });

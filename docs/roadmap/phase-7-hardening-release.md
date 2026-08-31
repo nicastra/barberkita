@@ -1,6 +1,6 @@
 # Phase 7: Hardening and Release
 
-**Status: Planned**
+**Status: Active**
 
 [Previous: Phase 6](phase-6-dashboard-reporting.md) · [Roadmap index](README.md)
 
@@ -31,6 +31,35 @@ secure, observable, recoverable production release for one shop.
   operational ownership outside the repository.
 - A release checklist and acceptance run covering both staff-managed and public
   customer journeys.
+
+## TODO
+
+### Security and correctness
+
+- [x] Review authentication, authorization, sessions, secrets, CORS, errors,
+      dependencies, logging, and abuse-prone public endpoints.
+- [x] Validate external input, domain invariants, database constraints,
+      transactional writes, and migration behavior end to end.
+
+### Experience and coverage
+
+- [x] Review accessibility and responsive behavior across protected and public
+      workflows.
+- [x] Add automated unit, integration, and end-to-end coverage for critical
+      booking, operations, checkout, and reporting paths.
+
+### Production and release
+
+- [x] Add environment-driven deployment configuration, health checks,
+      structured logs, and a reviewed migration procedure.
+- [x] Document and test automated PostgreSQL backup and isolated restoration.
+- [ ] Complete the release checklist and acceptance run for staff and public
+      customer journeys.
+
+The automated release journey, production image build and health smoke test,
+and isolated restore drill pass. The final checkbox remains an operator gate for
+the manual assistive-technology pass, production backup identifier, deployment
+approval, and recorded release decision.
 
 ## Acceptance criteria
 

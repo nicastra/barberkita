@@ -1,6 +1,6 @@
 # Phase 3: Customers and Bookings
 
-**Status: Planned**
+**Status: Completed**
 
 [Previous: Phase 2](phase-2-services-staff-availability.md) · [Roadmap index](README.md) · [Next: Phase 4](phase-4-daily-operations.md)
 
@@ -27,6 +27,26 @@ a simple public self-booking flow that cannot double-book a barber.
   cancelled transitions needed before daily operations.
 - Clear confirmation, validation, unavailable-slot, empty, and error experiences
   for staff and public users.
+
+## TODO
+
+### Customers and appointments
+
+- [x] Add searchable, duplicate-aware customer records with normalized contact details.
+- [x] Add the booking lifecycle and UTC appointment persistence.
+- [x] Add authenticated staff booking, rescheduling, and cancellation endpoints.
+
+### Public booking and conflicts
+
+- [x] Add public service, barber, date, and available-slot selection.
+- [x] Revalidate availability and prevent overlapping barber reservations transactionally.
+- [x] Return stable conflict responses and complete booking confirmations.
+
+### User experience and quality
+
+- [x] Add staff customer and appointment screens through the centralized API layer.
+- [x] Add the public self-booking flow with validation, empty, and error states.
+- [x] Add the Drizzle migration and focused concurrency and lifecycle tests.
 
 ## Acceptance criteria
 

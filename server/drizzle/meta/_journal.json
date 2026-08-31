@@ -15,6 +15,34 @@
       "when": 1788094107111,
       "tag": "0001_clumsy_gravity",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788098150679,
+      "tag": "0002_large_madame_web",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788099766242,
+      "tag": "0003_small_skaar",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788113336106,
+      "tag": "0004_last_green_goblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788115132138,
+      "tag": "0005_mysterious_spacker_dave",
+      "breakpoints": true
     }
   ]
 }

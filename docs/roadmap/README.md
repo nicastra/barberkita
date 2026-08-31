@@ -9,13 +9,13 @@ be active at a time.
 | Phase                                       | Scope                             | Status     |
 | ------------------------------------------- | --------------------------------- | ---------- |
 | [0](phase-0-foundation.md)                  | Foundation                        | Completed  |
-| [1](phase-1-authentication-shop-setup.md)   | Authentication and Shop Setup     | **Active** |
-| [2](phase-2-services-staff-availability.md) | Services, Staff, and Availability | Planned    |
-| [3](phase-3-customers-bookings.md)          | Customers and Bookings            | Planned    |
-| [4](phase-4-daily-operations.md)            | Daily Operations                  | Planned    |
-| [5](phase-5-checkout-payments.md)           | Checkout and Payments             | Planned    |
-| [6](phase-6-dashboard-reporting.md)         | Dashboard and Reporting           | Planned    |
-| [7](phase-7-hardening-release.md)           | Hardening and Release             | Planned    |
+| [1](phase-1-authentication-shop-setup.md)   | Authentication and Shop Setup     | Completed  |
+| [2](phase-2-services-staff-availability.md) | Services, Staff, and Availability | Completed  |
+| [3](phase-3-customers-bookings.md)          | Customers and Bookings            | Completed  |
+| [4](phase-4-daily-operations.md)            | Daily Operations                  | Completed  |
+| [5](phase-5-checkout-payments.md)           | Checkout and Payments             | Completed  |
+| [6](phase-6-dashboard-reporting.md)         | Dashboard and Reporting           | Completed  |
+| [7](phase-7-hardening-release.md)           | Hardening and Release             | **Active** |
 
 ## Status rules
 

@@ -1,6 +1,6 @@
 # Phase 1: Authentication and Shop Setup
 
-**Status: Active**
+**Status: Completed**
 
 [Previous: Phase 0](phase-0-foundation.md) · [Roadmap index](README.md) · [Next: Phase 2](phase-2-services-staff-availability.md)
 

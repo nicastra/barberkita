@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+deploy/production.env
+node_modules
+**/node_modules
+**/dist
+coverage
+backups
+*.dump
+*.sql.gz

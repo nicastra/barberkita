@@ -1,0 +1,16 @@
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cukurpro_e2e
+      POSTGRES_USER: cukurpro_e2e
+      POSTGRES_PASSWORD: cukurpro_e2e
+    ports:
+      - '${E2E_POSTGRES_PORT:-55432}:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cukurpro_e2e -d cukurpro_e2e']
+      interval: 2s
+      timeout: 3s
+      retries: 20
