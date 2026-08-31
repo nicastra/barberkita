@@ -18,6 +18,8 @@ customer data, database dumps, or private deployment URLs.
 - [ ] Rehearse pending migrations against the isolated restore.
 - [ ] Validate Compose, build immutable images, and deploy through migrations.
 - [ ] Confirm database, API, and client health plus safe structured logs.
+- [ ] Confirm Caddy serves a currently valid certificate for the app hostname.
+- [ ] Record the pre-deployment backup path and verify its SHA-256 checksum.
 
 ## Acceptance journey
 
@@ -37,4 +39,7 @@ customer data, database dumps, or private deployment URLs.
 
 - [ ] Record image digest, migrations, backup ID, evidence, approver, and
       rollback contact.
+- [ ] Re-run the deployed SHA and confirm deployment remains idempotent.
+- [ ] Confirm the previous full-SHA image can be pulled for application
+      rollback; treat database restoration as a separate downtime operation.
 - [ ] Confirm monitoring and backup ownership before announcing completion.

@@ -37,9 +37,9 @@ barberkita/
 │   ├── Dockerfile              # API runtime and migration image targets
 │   └── drizzle.config.ts
 ├── docs/                       # Project documentation
-├── deploy/                     # Safe production environment templates
+├── deploy/                     # Production environment template and Caddy config
 ├── e2e/                        # Real-database HTTP acceptance tests
-├── scripts/                    # Release, backup, and restore automation
+├── scripts/                    # Deploy, release, backup, and restore automation
 ├── compose.yaml                # Local PostgreSQL service
 ├── compose.e2e.yaml            # Disposable acceptance-test database
 ├── compose.production.yaml     # Migration-gated production services

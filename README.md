@@ -165,6 +165,12 @@ migration-gated Compose stack are documented in
 ownership is documented separately in
 [backup and restore](docs/operations/backup-restore.md).
 
+Production publishes immutable AMD64 images to GHCR under the full Git commit
+SHA. On the VPS, Caddy is the only service with public ports and provides
+automatic HTTPS for the same-origin client and `/api/*` routes. Do not start the
+production Compose file directly; use `scripts/deploy.sh` so backup, migration,
+and health gates cannot be skipped.
+
 ## Troubleshooting
 
 - If the shell says the API cannot be reached, confirm the server is running and
