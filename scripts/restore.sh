@@ -15,7 +15,10 @@ fi
 
 backup_path=$(cd -- "$(dirname -- "$1")" && pwd -P)/$(basename -- "$1")
 if [ -f "${backup_path}.sha256" ]; then
-  sha256sum -c "${backup_path}.sha256"
+  (
+    cd -- "$(dirname -- "$backup_path")"
+    sha256sum -c "$(basename -- "$backup_path").sha256"
+  )
 fi
 
 pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error --dbname="$RESTORE_DATABASE_URL" "$backup_path"

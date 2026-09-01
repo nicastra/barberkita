@@ -6,6 +6,8 @@ node_modules/
 .env.*
 !.env.example
 deploy/production.env
+/production.env
+/ghcr.env
 
 # Build and test output
 dist/

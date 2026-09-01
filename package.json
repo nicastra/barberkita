@@ -14,7 +14,7 @@
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
     "test": "bun run --filter '@cukurpro/*' test",
     "test:e2e": "./scripts/test-e2e.sh",
-    "deploy:check": "sh -n scripts/backup.sh scripts/restore.sh && bash -n scripts/test-e2e.sh && docker compose --env-file deploy/production.env.example -f compose.production.yaml config --quiet",
+    "deploy:check": "sh -n scripts/backup.sh scripts/restore.sh && bash -n scripts/test-e2e.sh scripts/deploy.sh && docker compose --env-file deploy/production.env.example -f compose.production.yaml config --quiet",
     "check:release": "bun run check && bun run test:e2e && bun run deploy:check",
     "check": "bun run format:check && bun run typecheck && bun run test && bun run build",
     "db:generate": "bun run --cwd server db:generate",

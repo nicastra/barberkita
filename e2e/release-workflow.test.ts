@@ -94,29 +94,32 @@ afterAll(async () => {
 
 describe('single-shop release workflow', () => {
   it('sets up one owner and establishes a secure session', async () => {
-    const setup = await request(
-      '/api/auth/setup',
-      'POST',
-      {
-        name: 'Release Owner',
-        email: 'owner@release.test',
-        password: 'ReleasePassword123!',
-        shop: {
-          name: 'Release Shop',
-          phone: '+62 21 555 0199',
-          email: 'shop@release.test',
-          address: 'Jakarta',
-          timezone: 'Asia/Jakarta',
-        },
+    const setupPayload = {
+      name: 'Release Owner',
+      email: 'owner@release.test',
+      password: 'ReleasePassword123!',
+      shop: {
+        name: 'Release Shop',
+        phone: '+62 21 555 0199',
+        email: 'shop@release.test',
+        address: 'Jakarta',
+        timezone: 'Asia/Jakarta',
       },
-      false,
-    );
+    };
+    const setup = await request('/api/auth/setup', 'POST', setupPayload, false);
     expect(setup.status).toBe(201);
     const setupBody = await responseJson(setup);
     ownerId = (setupBody.user as { id: string }).id;
-    expect((await request('/api/auth/setup', 'POST', {}, false)).status).toBe(
-      400,
+    const repeatedSetup = await request(
+      '/api/auth/setup',
+      'POST',
+      setupPayload,
+      false,
     );
+    expect(repeatedSetup.status).toBe(409);
+    await expect(responseJson(repeatedSetup)).resolves.toMatchObject({
+      error: { code: 'SETUP_COMPLETE' },
+    });
 
     const signIn = await request(
       '/api/auth/sign-in',
