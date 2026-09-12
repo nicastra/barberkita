@@ -1,11 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { BrowserRouter } from 'react-router-dom';
 import { Scissors } from 'lucide-react';
 
-import type { AuthUser } from '@/api/auth';
+import { getSession, type AuthUser } from '@/api/auth';
 import { Badge } from '@/components/ui/badge';
 import { ProtectedRoute } from '@/components/shared/ProtectedRoute';
+import { ShopSwitcher } from '@/components/shared/ShopSwitcher';
+import { ScopedShopRoute } from '@/components/shared/ScopedShopRoute';
 import { AuthPanel } from '@/features/auth/AuthPanel';
 import { SystemStatus } from '@/features/system/SystemStatus';
 import { HomePage } from '@/pages/HomePage';
@@ -16,6 +18,7 @@ import { BookingsPage } from '@/pages/BookingsPage';
 import { PublicBookingPage } from '@/pages/PublicBookingPage';
 import { CheckoutPage } from '@/pages/CheckoutPage';
 import { DashboardPage } from '@/pages/DashboardPage';
+import { ProviderDashboardPage } from '@/pages/ProviderDashboardPage';
 import {
   Card,
   CardDescription,
@@ -45,8 +48,11 @@ interface AppLayoutProps {
 function AppLayout({ user, onUserChange, onSessionResolved }: AppLayoutProps) {
   const location = useLocation();
   const isSignInPage = location.pathname === '/sign-in';
-  const isPublicBookingPage = location.pathname === '/book';
-  const isDashboardPage = location.pathname === '/dashboard';
+  const scopedSlug = location.pathname.match(/^\/(?:app|s)\/([^/]+)/)?.[1];
+  const workspacePath = scopedSlug ? `/app/${scopedSlug}` : null;
+  const isPublicBookingPage = location.pathname.startsWith('/s/');
+  const isDashboardPage = location.pathname.endsWith('/dashboard');
+  const isProviderPage = location.pathname.startsWith('/provider');
 
   return (
     <div className="bg-background text-foreground min-h-screen">
@@ -67,7 +73,7 @@ function AppLayout({ user, onUserChange, onSessionResolved }: AppLayoutProps) {
                 CukurPro
               </span>
               <span className="text-muted-foreground block text-xs">
-                Shop workspace
+                {isProviderPage ? 'Provider console' : 'Shop workspace'}
               </span>
             </span>
           </NavLink>
@@ -75,77 +81,93 @@ function AppLayout({ user, onUserChange, onSessionResolved }: AppLayoutProps) {
             aria-label="Primary navigation"
             className="flex flex-wrap items-center justify-end gap-3"
           >
-            <NavLink
-              to="/book"
-              className={({ isActive }) =>
-                `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
-              }
-            >
-              Book online
-            </NavLink>
-            {user && (
+            {isProviderPage ? (
               <NavLink
-                to="/dashboard"
-                className={({ isActive }) =>
-                  `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
-                }
+                to="/"
+                className="text-muted-foreground hover:text-foreground text-sm font-medium"
               >
-                Dashboard
+                Back to workspace
               </NavLink>
-            )}
-            {user && (
-              <NavLink
-                to="/bookings"
-                className={({ isActive }) =>
-                  `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
-                }
-              >
-                Appointments
-              </NavLink>
-            )}
-            {user && (
-              <NavLink
-                to="/checkout"
-                className={({ isActive }) =>
-                  `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
-                }
-              >
-                Checkout
-              </NavLink>
-            )}
-            {user?.role === 'owner' && (
+            ) : (
               <>
-                <NavLink
-                  to="/schedule"
-                  className={({ isActive }) =>
-                    `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
-                  }
-                >
-                  Schedule
-                </NavLink>
-                <NavLink
-                  to="/admin"
-                  className={({ isActive }) =>
-                    `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
-                  }
-                >
-                  Administration
-                </NavLink>
+                {scopedSlug && (
+                  <NavLink
+                    to={`/s/${scopedSlug}`}
+                    className={({ isActive }) =>
+                      `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+                    }
+                  >
+                    Book online
+                  </NavLink>
+                )}
+                {user && <ShopSwitcher />}
+                {user && workspacePath && (
+                  <NavLink
+                    to={`${workspacePath}/dashboard`}
+                    className={({ isActive }) =>
+                      `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+                    }
+                  >
+                    Dashboard
+                  </NavLink>
+                )}
+                {user && workspacePath && (
+                  <NavLink
+                    to={`${workspacePath}/bookings`}
+                    className={({ isActive }) =>
+                      `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+                    }
+                  >
+                    Appointments
+                  </NavLink>
+                )}
+                {user && workspacePath && (
+                  <NavLink
+                    to={`${workspacePath}/checkout`}
+                    className={({ isActive }) =>
+                      `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+                    }
+                  >
+                    Checkout
+                  </NavLink>
+                )}
+                {user?.role === 'owner' && workspacePath && (
+                  <>
+                    <NavLink
+                      to={`${workspacePath}/schedule`}
+                      className={({ isActive }) =>
+                        `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+                      }
+                    >
+                      Schedule
+                    </NavLink>
+                    <NavLink
+                      to={`${workspacePath}/admin`}
+                      className={({ isActive }) =>
+                        `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+                      }
+                    >
+                      Administration
+                    </NavLink>
+                  </>
+                )}
+                {!user && (
+                  <NavLink
+                    to="/sign-in"
+                    className={({ isActive }) =>
+                      `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+                    }
+                  >
+                    Sign in
+                  </NavLink>
+                )}
               </>
             )}
-            {!user && (
-              <NavLink
-                to="/sign-in"
-                className={({ isActive }) =>
-                  `text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`
-                }
-              >
-                Sign in
-              </NavLink>
+            {!isProviderPage && (
+              <Badge variant="outline" className="hidden sm:inline-flex">
+                Phase 6 · Reporting
+              </Badge>
             )}
-            <Badge variant="outline" className="hidden sm:inline-flex">
-              Phase 6 · Reporting
-            </Badge>
           </nav>
         </div>
       </header>
@@ -156,7 +178,7 @@ function AppLayout({ user, onUserChange, onSessionResolved }: AppLayoutProps) {
       >
         <div
           className={
-            isPublicBookingPage
+            isPublicBookingPage || isProviderPage
               ? 'mx-auto max-w-3xl'
               : isDashboardPage
                 ? 'block'
@@ -166,7 +188,7 @@ function AppLayout({ user, onUserChange, onSessionResolved }: AppLayoutProps) {
           <div>
             <Outlet />
           </div>
-          {!isPublicBookingPage && !isDashboardPage && (
+          {!isPublicBookingPage && !isDashboardPage && !isProviderPage && (
             <aside className="lg:sticky lg:top-8">
               <SystemStatus />
               {!isSignInPage && (
@@ -188,6 +210,22 @@ function AppLayout({ user, onUserChange, onSessionResolved }: AppLayoutProps) {
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getSession()
+      .then((response) => {
+        if (active) setUser(response.user);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setSessionReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleUserChange = useCallback((nextUser: AuthUser | null) => {
     setUser(nextUser);
   }, []);
@@ -217,19 +255,34 @@ export default function App() {
               />
             }
           />
-          <Route path="book" element={<PublicBookingPage />} />
+          <Route path="s/:shopSlug" element={<PublicBookingPage />} />
           <Route element={<ProtectedRoute user={user} ready={sessionReady} />}>
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="bookings" element={<BookingsPage />} />
-            <Route path="checkout" element={<CheckoutPage user={user} />} />
+            <Route path="provider" element={<ProviderDashboardPage />} />
           </Route>
-          <Route
-            element={
-              <ProtectedRoute user={user} ready={sessionReady} ownerOnly />
-            }
-          >
-            <Route path="admin" element={<OwnerAdminPage user={user} />} />
-            <Route path="schedule" element={<SchedulingPage />} />
+          <Route element={<ProtectedRoute user={user} ready={sessionReady} />}>
+            <Route
+              path="app/:shopSlug"
+              element={
+                user ? (
+                  <ScopedShopRoute
+                    user={user}
+                    onUserChange={handleUserChange}
+                  />
+                ) : null
+              }
+            >
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="bookings" element={<BookingsPage />} />
+              <Route path="checkout" element={<CheckoutPage user={user} />} />
+              <Route
+                element={
+                  <ProtectedRoute user={user} ready={sessionReady} ownerOnly />
+                }
+              >
+                <Route path="admin" element={<OwnerAdminPage user={user} />} />
+                <Route path="schedule" element={<SchedulingPage />} />
+              </Route>
+            </Route>
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>

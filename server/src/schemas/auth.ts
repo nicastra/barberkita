@@ -7,6 +7,10 @@ export const signInSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+export const reauthenticateSchema = z.object({
+  password: z.string().min(1).max(200),
+});
+
 export const setupSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(320),
@@ -40,3 +44,28 @@ export const updateStaffSchema = z
   });
 
 export const staffIdSchema = z.object({ id: z.string().uuid() });
+
+export const invitationCreateSchema = z.object({
+  shopId: z.string().uuid(),
+  email: z.string().trim().email().max(320),
+  organizationRole: z
+    .enum(['organization_owner', 'organization_admin', 'organization_member'])
+    .default('organization_member'),
+  shopRole: z.enum(['shop_manager', 'receptionist', 'barber']),
+  expiresInHours: z.number().int().min(1).max(168).default(72),
+});
+
+export const invitationIdSchema = z.object({ id: z.string().uuid() });
+
+export const invitationTokenSchema = z.object({
+  token: z
+    .string()
+    .min(40)
+    .max(128)
+    .regex(/^[A-Za-z0-9_-]+$/),
+});
+
+export const invitationAcceptSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  password: z.string().min(12).max(200),
+});

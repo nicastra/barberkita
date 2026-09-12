@@ -10,6 +10,10 @@ import {
   type Shop,
   type StaffMember,
 } from '@/api/shop';
+import {
+  getOnboardingChecklist,
+  type OnboardingChecklist,
+} from '@/api/onboarding';
 import type { AuthUser } from '@/api/auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +34,7 @@ interface OwnerAdminPanelProps {
 export function OwnerAdminPanel({ user }: OwnerAdminPanelProps) {
   const [shop, setShop] = useState<Shop | null>(null);
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [checklist, setChecklist] = useState<OnboardingChecklist | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingShop, setSavingShop] = useState(false);
   const [savingStaff, setSavingStaff] = useState(false);
@@ -46,12 +51,11 @@ export function OwnerAdminPanel({ user }: OwnerAdminPanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const [shopResponse, staffResponse] = await Promise.all([
-        getShop(),
-        listStaff(),
-      ]);
+      const [shopResponse, staffResponse, checklistResponse] =
+        await Promise.all([getShop(), listStaff(), getOnboardingChecklist()]);
       setShop(shopResponse.shop);
       setStaff(staffResponse.staff);
+      setChecklist(checklistResponse.checklist);
     } catch {
       setError('We could not load shop administration data.');
     } finally {
@@ -181,6 +185,32 @@ export function OwnerAdminPanel({ user }: OwnerAdminPanelProps) {
           {error ?? notice}
         </p>
       )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Setup checklist</CardTitle>
+          <CardDescription>
+            Progress is calculated from your saved branch, catalog, and
+            schedules.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="grid gap-2 text-sm sm:grid-cols-2">
+            {checklist?.items.map((item) => (
+              <li key={item.id} className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={
+                    item.complete ? 'text-emerald-700' : 'text-muted-foreground'
+                  }
+                >
+                  {item.complete ? '✓' : '○'}
+                </span>
+                <span>{item.label}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Shop profile</CardTitle>

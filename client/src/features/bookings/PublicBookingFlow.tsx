@@ -33,7 +33,7 @@ function localTime(booking: Booking): string {
   }).format(new Date(booking.startAt));
 }
 
-export function PublicBookingFlow() {
+export function PublicBookingFlow({ shopSlug }: { shopSlug: string }) {
   const [options, setOptions] = useState<PublicOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -54,11 +54,11 @@ export function PublicBookingFlow() {
   const [confirmation, setConfirmation] = useState<Booking | null>(null);
 
   useEffect(() => {
-    getPublicOptions()
+    getPublicOptions(shopSlug)
       .then((response) => setOptions(response.options))
       .catch(() => setError('Public booking is not available right now.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [shopSlug]);
 
   const eligibleBarbers = useMemo(
     () =>
@@ -76,6 +76,7 @@ export function PublicBookingFlow() {
     setSelectedSlot(null);
     try {
       const response = await getPublicAvailability({
+        shopSlug,
         serviceId,
         date,
         ...(barberId ? { barberId } : {}),
@@ -96,6 +97,7 @@ export function PublicBookingFlow() {
     setError(null);
     try {
       const response = await createPublicBooking({
+        shopSlug,
         serviceId,
         barberId: selectedSlot.barberId,
         startAt: selectedSlot.startAt,

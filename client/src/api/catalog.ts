@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiRequest } from './client';
+import { apiRequest, scopedShopPath } from './client';
 
 const serviceSchema = z.object({
   id: z.string().uuid(),
@@ -75,11 +75,13 @@ export type WeeklyRangeInput = {
 export type ScheduleExceptionInput = Omit<ScheduleException, 'id'>;
 
 export function listServices() {
-  return apiRequest('/api/services', { schema: servicesResponseSchema });
+  return apiRequest(scopedShopPath('/services'), {
+    schema: servicesResponseSchema,
+  });
 }
 
 export function createService(input: ServiceInput) {
-  return apiRequest('/api/services', {
+  return apiRequest(scopedShopPath('/services'), {
     method: 'POST',
     body: input,
     schema: serviceResponseSchema,
@@ -87,7 +89,7 @@ export function createService(input: ServiceInput) {
 }
 
 export function updateService(id: string, input: Partial<ServiceInput>) {
-  return apiRequest(`/api/services/${id}`, {
+  return apiRequest(scopedShopPath(`/services/${id}`), {
     method: 'PATCH',
     body: input,
     schema: serviceResponseSchema,
@@ -95,7 +97,9 @@ export function updateService(id: string, input: Partial<ServiceInput>) {
 }
 
 export function listBarbers() {
-  return apiRequest('/api/barbers', { schema: barbersResponseSchema });
+  return apiRequest(scopedShopPath('/barbers'), {
+    schema: barbersResponseSchema,
+  });
 }
 
 export function createBarber(input: {
@@ -103,7 +107,7 @@ export function createBarber(input: {
   staffUserId: string | null;
   active: boolean;
 }) {
-  return apiRequest('/api/barbers', {
+  return apiRequest(scopedShopPath('/barbers'), {
     method: 'POST',
     body: input,
     schema: barberResponseSchema,
@@ -114,7 +118,7 @@ export function updateBarber(
   id: string,
   input: { name?: string; staffUserId?: string | null; active?: boolean },
 ) {
-  return apiRequest(`/api/barbers/${id}`, {
+  return apiRequest(scopedShopPath(`/barbers/${id}`), {
     method: 'PATCH',
     body: input,
     schema: barberResponseSchema,
@@ -122,7 +126,7 @@ export function updateBarber(
 }
 
 export function assignBarberServices(id: string, serviceIds: string[]) {
-  return apiRequest(`/api/barbers/${id}/services`, {
+  return apiRequest(scopedShopPath(`/barbers/${id}/services`), {
     method: 'PUT',
     body: { serviceIds },
     schema: barberResponseSchema,
@@ -130,13 +134,13 @@ export function assignBarberServices(id: string, serviceIds: string[]) {
 }
 
 export function getBarberSchedule(id: string) {
-  return apiRequest(`/api/barbers/${id}/schedule`, {
+  return apiRequest(scopedShopPath(`/barbers/${id}/schedule`), {
     schema: scheduleResponseSchema,
   });
 }
 
 export function replaceWorkingHours(id: string, hours: WeeklyRangeInput[]) {
-  return apiRequest(`/api/barbers/${id}/working-hours`, {
+  return apiRequest(scopedShopPath(`/barbers/${id}/working-hours`), {
     method: 'PUT',
     body: { hours },
     schema: scheduleResponseSchema,
@@ -144,7 +148,7 @@ export function replaceWorkingHours(id: string, hours: WeeklyRangeInput[]) {
 }
 
 export function replaceBreaks(id: string, breaks: WeeklyRangeInput[]) {
-  return apiRequest(`/api/barbers/${id}/breaks`, {
+  return apiRequest(scopedShopPath(`/barbers/${id}/breaks`), {
     method: 'PUT',
     body: { breaks },
     schema: scheduleResponseSchema,
@@ -155,7 +159,7 @@ export function createScheduleException(
   barberId: string,
   input: ScheduleExceptionInput,
 ) {
-  return apiRequest(`/api/barbers/${barberId}/exceptions`, {
+  return apiRequest(scopedShopPath(`/barbers/${barberId}/exceptions`), {
     method: 'POST',
     body: input,
     schema: exceptionResponseSchema,
@@ -163,11 +167,14 @@ export function createScheduleException(
 }
 
 export function deleteScheduleException(barberId: string, exceptionId: string) {
-  return apiRequest(`/api/barbers/${barberId}/exceptions/${exceptionId}`, {
-    method: 'DELETE',
-    acceptedStatuses: [204],
-    schema: z.null(),
-  });
+  return apiRequest(
+    scopedShopPath(`/barbers/${barberId}/exceptions/${exceptionId}`),
+    {
+      method: 'DELETE',
+      acceptedStatuses: [204],
+      schema: z.null(),
+    },
+  );
 }
 
 export const availabilitySchema = z.object({
@@ -198,7 +205,7 @@ export function getAvailability(input: {
     date: input.date,
   });
   if (input.barberId) query.set('barberId', input.barberId);
-  return apiRequest(`/api/availability?${query.toString()}`, {
+  return apiRequest(scopedShopPath(`/availability?${query.toString()}`), {
     schema: z.object({ availability: availabilitySchema }),
   });
 }

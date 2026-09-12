@@ -67,7 +67,6 @@ const booking: BookingView = {
 
 function authStub(user: AuthUser | null): AuthService {
   return {
-    setupOwner: async () => null,
     signIn: async () => null,
     signOut: async () => undefined,
     getUser: async () => user,
@@ -126,6 +125,7 @@ function appFor(service: BookingService, user: AuthUser | null = owner) {
     },
     authService: authStub(user),
     bookingService: service,
+    enableLegacyRoutes: true,
   });
 }
 

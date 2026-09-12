@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import {
-  getPublicOptions,
   listBookings,
   type BookingStatus,
   type Booking,
   type PublicOptions,
 } from '@/api/bookings';
+import { listBarbers, listServices } from '@/api/catalog';
 import { listCustomers, type Customer } from '@/api/customers';
+import { getShop } from '@/api/shop';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -70,19 +71,36 @@ export function StaffBookingWorkspace() {
     setLoading(true);
     setError(null);
     try {
-      const [customerResponse, bookingResponse, optionResponse] =
-        await Promise.all([
-          listCustomers(),
-          listBookings({
-            date: selectedDate,
-            ...(barberFilter ? { barberId: barberFilter } : {}),
-            ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
-          }),
-          getPublicOptions(),
-        ]);
+      const [
+        customerResponse,
+        bookingResponse,
+        shopResponse,
+        services,
+        barbers,
+      ] = await Promise.all([
+        listCustomers(),
+        listBookings({
+          date: selectedDate,
+          ...(barberFilter ? { barberId: barberFilter } : {}),
+          ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        }),
+        getShop(),
+        listServices(),
+        listBarbers(),
+      ]);
       setCustomers(customerResponse.customers);
       setBookings(bookingResponse.bookings);
-      setOptions(optionResponse.options);
+      setOptions({
+        shop: shopResponse.shop,
+        services: services.services.filter((service) => service.active),
+        barbers: barbers.barbers
+          .filter((barber) => barber.active)
+          .map((barber) => ({
+            id: barber.id,
+            name: barber.name,
+            serviceIds: barber.serviceIds,
+          })),
+      });
       setSelectedCustomerId(
         (current) => current ?? customerResponse.customers[0]?.id ?? null,
       );

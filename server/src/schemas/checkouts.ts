@@ -3,6 +3,14 @@ import { z } from 'zod';
 const rupiahSchema = z.number().int().min(0).max(2_000_000_000);
 
 export const checkoutIdSchema = z.object({ id: z.uuid() });
+export const receiptNumberSchema = z.object({
+  receiptNumber: z
+    .string()
+    .trim()
+    .min(4)
+    .max(120)
+    .regex(/^[A-Za-z0-9_-]+$/),
+});
 
 export const checkoutPaymentParamsSchema = z.object({
   id: z.uuid(),

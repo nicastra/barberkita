@@ -9,6 +9,7 @@ import {
   createCheckoutSchema,
   paymentCorrectionSchema,
   recordPaymentSchema,
+  receiptNumberSchema,
 } from '../schemas/checkouts';
 import type { AuthService, AuthUser } from '../services/auth-service';
 import {
@@ -40,6 +41,24 @@ export function createCheckoutRoutes(
         context.req.valid('query'),
       ),
     }),
+  );
+  app.get(
+    '/lookup/:receiptNumber',
+    zValidator('param', receiptNumberSchema),
+    async (context) => {
+      const checkout = checkoutService.getByReceiptNumber
+        ? await checkoutService.getByReceiptNumber(
+            context.get('user'),
+            context.req.valid('param').receiptNumber,
+          )
+        : null;
+      return checkout
+        ? context.json({ checkout })
+        : context.json(
+            { error: { code: 'NOT_FOUND', message: 'Checkout not found.' } },
+            404,
+          );
+    },
   );
   app.post('/', zValidator('json', createCheckoutSchema), async (context) =>
     context.json(

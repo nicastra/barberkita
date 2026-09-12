@@ -12,7 +12,6 @@ const user: AuthUser = {
 };
 function authStub(current: AuthUser | null): AuthService {
   return {
-    setupOwner: async () => null,
     signIn: async () => null,
     signOut: async () => undefined,
     getUser: async () => current,
@@ -73,6 +72,7 @@ function appFor(current: AuthUser | null) {
     },
     authService: authStub(current),
     reportingService: reportingStub(),
+    enableLegacyRoutes: true,
   });
 }
 describe('reporting routes', () => {

@@ -67,17 +67,37 @@ returns a generic degraded response and never returns connection details.
 
 ## Staff setup and availability API
 
-The first owner can initialize the shop once with `POST /api/auth/setup`. Staff
-then use `POST /api/auth/sign-in`, `POST /api/auth/sign-out`, and `GET
-/api/auth/me`; the server keeps the session in an HttpOnly cookie. Authenticated
-users can read `GET /api/shop`, while owners can update the shop and manage
-staff through `/api/auth/staff`. Passwords and session tokens are never returned
-by the API. Security-sensitive changes are recorded in `audit_logs`.
+Organizations are provisioned by an approved provider; the legacy global setup
+endpoint is disabled. Staff use `POST /api/auth/sign-in`, `POST
+/api/auth/sign-out`, and `GET /api/auth/me`; the server keeps the session in an
+HttpOnly cookie. Authenticated users read and update the selected branch through
+`/api/shops/:shopId`, while organization administrators manage memberships and
+invitations under `/api/organizations/:organizationId`. Passwords and session
+tokens are never returned by the API. Security-sensitive changes are recorded
+in `audit_logs`.
 
 After signing in as an owner, the browser shows the owner administration
 workspace with editable shop profile fields, staff account creation, role
 changes, and account removal. Non-owner staff only see the sign-in/session
 controls and cannot access that workspace.
+
+After sign-in, platform administrators are routed to `/provider`; tenant owners
+and staff are routed to their authorized `/app/:shopSlug/dashboard` branch. The
+branch slug is resolved from current memberships before the workspace renders.
+
+Provider-approved organizations start with a trial subscription and a one-time
+owner invitation. After accepting, owners can finish their branch profile and
+catalog setup from the tenant workspace. `GET /api/shops/:shopId/onboarding`
+returns a persisted-configuration checklist for business details, services,
+barbers, schedules, and public booking; completed milestones are recorded once
+and are never represented by a global setup flag.
+
+Provider support access is time-limited and audited. Ordinary requests are
+created pending organization-owner approval; break-glass grants are restricted
+to platform administrators and expire within 60 minutes. Owners can review and
+revoke grants under `/api/organizations/:organizationId/support-grants`, while
+provider access is revalidated against the target organization and expiry on
+every authorization request.
 
 Authenticated staff can read `/api/services`, `/api/barbers`, and
 `/api/availability`. Owners manage catalog records, durable barber profiles,
@@ -87,14 +107,16 @@ and availability results are calculated in the shop timezone while excluding
 ineligible or inactive resources, breaks, time off, and supplied reservation
 intervals. The browser exposes these controls in the protected Schedule page.
 
-Authenticated staff can search and maintain customers through `/api/customers`
-and manage the booking lifecycle through `/api/bookings`. Appointment moments
+Authenticated staff can search and maintain customers through
+`/api/shops/:shopId/customers` and manage the booking lifecycle through
+`/api/shops/:shopId/bookings`. Appointment moments
 are stored as UTC timestamps, validated against current availability, and
 protected by a PostgreSQL exclusion constraint so concurrent requests receive
 the stable `BOOKING_TIME_UNAVAILABLE` conflict. Public customers use
-`/api/public/options`, `/api/public/availability`, and
-`/api/public/bookings`; the browser exposes this flow at `/book` and the staff
-workspace at `/bookings`.
+`/api/public/shops/:shopSlug/options`,
+`/api/public/shops/:shopSlug/availability`, and
+`/api/public/shops/:shopSlug/bookings`; the browser exposes this flow at
+`/s/:shopSlug` and the staff workspace at `/app/:shopSlug/bookings`.
 
 The same appointment workspace provides a selected-day queue with barber and
 status filters, walk-in intake, and controlled `confirmed → checked_in →
@@ -109,10 +131,11 @@ owner-only void/refund corrections as append-only records. Searchable receipt
 details show the appointment, customer, barber, payment methods, references, and
 remaining balance; no online payment gateway is involved.
 
-Authenticated staff can open the Dashboard page or call `/api/dashboard` for
-the selected shop day. `/api/reports/revenue` and `/api/reports/performance`
-provide timezone-aware summaries using inclusive calendar dates and append-only
-payment corrections.
+Authenticated staff can open `/app/:shopSlug/dashboard` or call
+`/api/shops/:shopId/dashboard` for the selected shop day.
+`/api/shops/:shopId/reports/revenue` and
+`/api/shops/:shopId/reports/performance` provide timezone-aware summaries using
+inclusive calendar dates and append-only payment corrections.
 
 ## Environment variables
 
@@ -181,4 +204,4 @@ and health gates cannot be skipped.
   restart the server.
 
 See [project documentation](docs/README.md) for structure, coding conventions,
-and the phased MVP roadmap.
+the phased MVP roadmap, and the planned SaaS roadmap.

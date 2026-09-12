@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiRequest } from './client';
+import { apiRequest, scopedShopPath } from './client';
 
 export const customerSchema = z.object({
   id: z.string().uuid(),
@@ -28,13 +28,13 @@ export function listCustomers(search?: string) {
   const query = new URLSearchParams();
   if (search) query.set('search', search);
   const suffix = query.size ? `?${query.toString()}` : '';
-  return apiRequest(`/api/customers${suffix}`, {
+  return apiRequest(scopedShopPath(`/customers${suffix}`), {
     schema: z.object({ customers: z.array(customerSchema) }),
   });
 }
 
 export function createCustomer(input: CustomerInput) {
-  return apiRequest('/api/customers', {
+  return apiRequest(scopedShopPath('/customers'), {
     method: 'POST',
     body: input,
     schema: customerResponseSchema,
@@ -42,7 +42,7 @@ export function createCustomer(input: CustomerInput) {
 }
 
 export function updateCustomer(id: string, input: Partial<CustomerInput>) {
-  return apiRequest(`/api/customers/${id}`, {
+  return apiRequest(scopedShopPath(`/customers/${id}`), {
     method: 'PATCH',
     body: input,
     schema: customerResponseSchema,

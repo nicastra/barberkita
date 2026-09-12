@@ -16,7 +16,6 @@ const owner: AuthUser = {
 
 function authStub(user: AuthUser): AuthService {
   return {
-    setupOwner: async () => null,
     signIn: async () => null,
     signOut: async () => undefined,
     getUser: async () => user,

@@ -22,11 +22,14 @@ import {
   bookingEvents,
   bookings,
   customers,
+  organizations,
   services,
+  shopMemberships,
   shops,
-  staffUsers,
+  users,
 } from '../db/schema';
 import type { AuthUser } from './auth-service';
+import { auditScope } from './audit-scope';
 import {
   localDateForInstant,
   zonedMinuteToDate,
@@ -157,12 +160,27 @@ export interface BookingService {
     id: string,
     input: BookingSelection,
   ): Promise<BookingView>;
+  getByConfirmationCode?(
+    actor: AuthUser,
+    code: string,
+  ): Promise<BookingView | null>;
   getPublicOptions(): Promise<PublicOptions | null>;
+  getPublicOptionsForShop?(shopSlug: string): Promise<PublicOptions | null>;
   findPublicAvailability(input: {
     serviceId: string;
     barberId?: string | undefined;
     date: string;
   }): Promise<AvailabilityResult | null>;
+  findPublicAvailabilityForShop?(input: {
+    shopSlug: string;
+    serviceId: string;
+    barberId?: string | undefined;
+    date: string;
+  }): Promise<AvailabilityResult | null>;
+  createPublicForShop?(
+    shopSlug: string,
+    input: BookingSelection & { customer: Omit<CustomerInput, 'notes'> },
+  ): Promise<BookingView | null>;
 }
 
 function confirmationCode(): string {
@@ -348,12 +366,22 @@ export function createBookingService(
           .returning({ id: bookings.id });
         if (!booking) throw new Error('Booking creation failed.');
         await transaction.insert(bookingEvents).values({
+          shopId: input.shopId,
           bookingId: booking.id,
           actorStaffUserId: input.actorStaffUserId,
           fromStatus: null,
           toStatus: input.status ?? 'initial',
         });
         await transaction.insert(auditLogs).values({
+          ...(input.actorStaffUserId
+            ? auditScope({
+                id: input.actorStaffUserId,
+                shopId: input.shopId,
+                name: '',
+                email: 'audit@local.invalid',
+                role: 'staff',
+              })
+            : { organizationId: null, shopId: input.shopId }),
           actorStaffUserId: input.actorStaffUserId,
           action: 'booking_created',
           entityType: 'booking',
@@ -413,12 +441,14 @@ export function createBookingService(
           409,
         );
       await transaction.insert(bookingEvents).values({
+        shopId: actor.shopId,
         bookingId: id,
         actorStaffUserId: actor.id,
         fromStatus: existing.status,
         toStatus,
       });
       await transaction.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: `booking_${toStatus}`,
         entityType: 'booking',
@@ -478,12 +508,14 @@ export function createBookingService(
           409,
         );
       await transaction.insert(bookingEvents).values({
+        shopId: actor.shopId,
         bookingId: id,
         actorStaffUserId: actor.id,
         fromStatus: existing.status,
         toStatus,
       });
       await transaction.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: `booking_${toStatus}`,
         entityType: 'booking',
@@ -493,6 +525,90 @@ export function createBookingService(
     const booking = await getBooking(actor.shopId, id);
     if (!booking) throw new Error('Updated booking was not found.');
     return booking;
+  }
+
+  async function publicOptionsForShopId(
+    shopId: string,
+  ): Promise<PublicOptions | null> {
+    const shop = await database
+      .select({
+        id: shops.id,
+        name: shops.name,
+        phone: shops.phone,
+        email: shops.email,
+        address: shops.address,
+        timezone: shops.timezone,
+      })
+      .from(shops)
+      .leftJoin(organizations, eq(shops.organizationId, organizations.id))
+      .where(
+        and(
+          eq(shops.id, shopId),
+          or(
+            isNull(shops.organizationId),
+            inArray(organizations.lifecycle, ['trialing', 'active']),
+          ),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]);
+    if (!shop) return null;
+    const [activeServices, activeBarbers] = await Promise.all([
+      database
+        .select({
+          id: services.id,
+          name: services.name,
+          description: services.description,
+          durationMinutes: services.durationMinutes,
+          priceRupiah: services.priceRupiah,
+        })
+        .from(services)
+        .where(and(eq(services.shopId, shop.id), eq(services.active, true)))
+        .orderBy(asc(services.name)),
+      database
+        .select({ id: barberProfiles.id, name: barberProfiles.name })
+        .from(barberProfiles)
+        .leftJoin(users, eq(barberProfiles.staffUserId, users.id))
+        .leftJoin(
+          shopMemberships,
+          and(
+            eq(shopMemberships.userId, users.id),
+            eq(shopMemberships.shopId, barberProfiles.shopId),
+          ),
+        )
+        .where(
+          and(
+            eq(barberProfiles.shopId, shop.id),
+            eq(barberProfiles.active, true),
+            or(
+              isNull(barberProfiles.staffUserId),
+              and(eq(users.active, true), eq(shopMemberships.active, true)),
+            ),
+          ),
+        )
+        .orderBy(asc(barberProfiles.name)),
+    ]);
+    const assignments = activeBarbers.length
+      ? await database
+          .select()
+          .from(barberServices)
+          .where(
+            inArray(
+              barberServices.barberId,
+              activeBarbers.map((barber) => barber.id),
+            ),
+          )
+      : [];
+    return {
+      shop,
+      services: activeServices,
+      barbers: activeBarbers.map((barber) => ({
+        ...barber,
+        serviceIds: assignments
+          .filter((assignment) => assignment.barberId === barber.id)
+          .map((assignment) => assignment.serviceId),
+      })),
+    };
   }
 
   return {
@@ -581,7 +697,18 @@ export function createBookingService(
       const service = await database
         .select({ shopId: services.shopId })
         .from(services)
-        .where(and(eq(services.id, input.serviceId), eq(services.active, true)))
+        .innerJoin(shops, eq(services.shopId, shops.id))
+        .leftJoin(organizations, eq(shops.organizationId, organizations.id))
+        .where(
+          and(
+            eq(services.id, input.serviceId),
+            eq(services.active, true),
+            or(
+              isNull(shops.organizationId),
+              inArray(organizations.lifecycle, ['trialing', 'active']),
+            ),
+          ),
+        )
         .limit(1)
         .then((rows) => rows[0]);
       if (!service)
@@ -644,12 +771,14 @@ export function createBookingService(
               409,
             );
           await transaction.insert(bookingEvents).values({
+            shopId: actor.shopId,
             bookingId: id,
             actorStaffUserId: actor.id,
             fromStatus: existing.status,
             toStatus: 'rescheduled',
           });
           await transaction.insert(auditLogs).values({
+            ...auditScope(actor),
             actorStaffUserId: actor.id,
             action: 'booking_rescheduled',
             entityType: 'booking',
@@ -669,6 +798,20 @@ export function createBookingService(
       if (!booking) throw new Error('Rescheduled booking was not found.');
       return booking;
     },
+    async getByConfirmationCode(actor, code) {
+      const row = await database
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.shopId, actor.shopId),
+            eq(bookings.confirmationCode, code),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+      return row ? getBooking(actor.shopId, row.id) : null;
+    },
     async getPublicOptions() {
       const shop = await database
         .select({
@@ -680,64 +823,48 @@ export function createBookingService(
           timezone: shops.timezone,
         })
         .from(shops)
+        .leftJoin(organizations, eq(shops.organizationId, organizations.id))
+        .where(
+          or(
+            isNull(shops.organizationId),
+            inArray(organizations.lifecycle, ['trialing', 'active']),
+          ),
+        )
         .limit(1)
         .then((rows) => rows[0]);
-      if (!shop) return null;
-      const [activeServices, activeBarbers] = await Promise.all([
-        database
-          .select({
-            id: services.id,
-            name: services.name,
-            description: services.description,
-            durationMinutes: services.durationMinutes,
-            priceRupiah: services.priceRupiah,
-          })
-          .from(services)
-          .where(and(eq(services.shopId, shop.id), eq(services.active, true)))
-          .orderBy(asc(services.name)),
-        database
-          .select({ id: barberProfiles.id, name: barberProfiles.name })
-          .from(barberProfiles)
-          .leftJoin(staffUsers, eq(barberProfiles.staffUserId, staffUsers.id))
-          .where(
-            and(
-              eq(barberProfiles.shopId, shop.id),
-              eq(barberProfiles.active, true),
-              or(
-                isNull(barberProfiles.staffUserId),
-                eq(staffUsers.active, true),
-              ),
-            ),
-          )
-          .orderBy(asc(barberProfiles.name)),
-      ]);
-      const assignments = activeBarbers.length
-        ? await database
-            .select()
-            .from(barberServices)
-            .where(
-              inArray(
-                barberServices.barberId,
-                activeBarbers.map((barber) => barber.id),
-              ),
-            )
-        : [];
-      return {
-        shop,
-        services: activeServices,
-        barbers: activeBarbers.map((barber) => ({
-          ...barber,
-          serviceIds: assignments
-            .filter((assignment) => assignment.barberId === barber.id)
-            .map((assignment) => assignment.serviceId),
-        })),
-      };
+      return shop ? publicOptionsForShopId(shop.id) : null;
+    },
+    async getPublicOptionsForShop(shopSlug) {
+      const shop = await database
+        .select({ id: shops.id })
+        .from(shops)
+        .innerJoin(organizations, eq(shops.organizationId, organizations.id))
+        .where(
+          and(
+            eq(shops.slug, shopSlug),
+            inArray(organizations.lifecycle, ['trialing', 'active']),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+      return shop ? publicOptionsForShopId(shop.id) : null;
     },
     async findPublicAvailability(input) {
       const service = await database
         .select({ shopId: services.shopId })
         .from(services)
-        .where(and(eq(services.id, input.serviceId), eq(services.active, true)))
+        .innerJoin(shops, eq(services.shopId, shops.id))
+        .leftJoin(organizations, eq(shops.organizationId, organizations.id))
+        .where(
+          and(
+            eq(services.id, input.serviceId),
+            eq(services.active, true),
+            or(
+              isNull(shops.organizationId),
+              inArray(organizations.lifecycle, ['trialing', 'active']),
+            ),
+          ),
+        )
         .limit(1)
         .then((rows) => rows[0]);
       if (!service) return null;
@@ -747,6 +874,63 @@ export function createBookingService(
         barberId: input.barberId,
         date: input.date,
         intervalMinutes: 15,
+      });
+    },
+    async findPublicAvailabilityForShop(input) {
+      const service = await database
+        .select({ shopId: services.shopId })
+        .from(services)
+        .innerJoin(shops, eq(services.shopId, shops.id))
+        .innerJoin(organizations, eq(shops.organizationId, organizations.id))
+        .where(
+          and(
+            eq(shops.slug, input.shopSlug),
+            inArray(organizations.lifecycle, ['trialing', 'active']),
+            eq(services.id, input.serviceId),
+            eq(services.active, true),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+      if (!service) return null;
+      return availabilityService.findSlots({
+        shopId: service.shopId,
+        serviceId: input.serviceId,
+        barberId: input.barberId,
+        date: input.date,
+        intervalMinutes: 15,
+      });
+    },
+    async createPublicForShop(shopSlug, input) {
+      const service = await database
+        .select({ shopId: services.shopId })
+        .from(services)
+        .innerJoin(shops, eq(services.shopId, shops.id))
+        .innerJoin(organizations, eq(shops.organizationId, organizations.id))
+        .where(
+          and(
+            eq(shops.slug, shopSlug),
+            inArray(organizations.lifecycle, ['trialing', 'active']),
+            eq(services.id, input.serviceId),
+            eq(services.active, true),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+      if (!service) return null;
+      const interval = await requireAvailable(service.shopId, input);
+      const customer = await customerService.create(service.shopId, {
+        ...input.customer,
+        notes: '',
+      });
+      return insertBooking({
+        shopId: service.shopId,
+        customerId: customer.customer.id,
+        selection: input,
+        ...interval,
+        source: 'public',
+        actorStaffUserId: null,
+        notes: '',
       });
     },
   };
