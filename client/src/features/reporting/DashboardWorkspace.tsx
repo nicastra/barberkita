@@ -258,7 +258,7 @@ export function DashboardWorkspace() {
                 <div className="grid gap-3">
                   {dashboard.appointments.map((appointment) => (
                     <Link
-                      to={`/bookings?date=${dashboard.date}`}
+                      to={`../bookings?date=${dashboard.date}`}
                       key={appointment.id}
                       className="border-border hover:bg-muted/50 flex flex-col justify-between gap-3 rounded-xl border p-4 transition-colors sm:flex-row sm:items-center"
                     >

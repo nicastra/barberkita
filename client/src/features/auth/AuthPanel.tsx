@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { getSession, signIn, signOut, type AuthUser } from '@/api/auth';
+import { getProviderMe } from '@/api/provider';
+import { listTenantMemberships } from '@/api/tenant';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -16,6 +19,7 @@ interface AuthPanelProps {
 }
 
 export function AuthPanel({ onUserChange, onSessionResolved }: AuthPanelProps) {
+  const navigate = useNavigate();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,10 +51,38 @@ export function AuthPanel({ onUserChange, onSessionResolved }: AuthPanelProps) {
       setUser(signedInUser);
       onUserChange?.(signedInUser);
       setPassword('');
+      void redirectAfterSignIn(signedInUser);
     } catch {
       setError('Invalid email or password.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function redirectAfterSignIn(signedInUser: AuthUser) {
+    // Provider access is determined by the server's explicit platform-admin
+    // registration, never by a tenant role or a client-provided flag.
+    try {
+      await getProviderMe();
+      navigate('/provider', { replace: true });
+      return;
+    } catch {
+      // A normal tenant user is expected to receive 403 here.
+    }
+
+    try {
+      const { memberships } = await listTenantMemberships();
+      const activeMembership =
+        memberships.find(
+          (membership) =>
+            membership.shopId === signedInUser.shopId && membership.shopSlug,
+        ) ?? memberships.find((membership) => membership.shopSlug);
+      if (activeMembership?.shopSlug)
+        navigate(`/app/${activeMembership.shopSlug}/dashboard`, {
+          replace: true,
+        });
+    } catch {
+      // Keep the signed-in state visible if memberships cannot be loaded.
     }
   }
 

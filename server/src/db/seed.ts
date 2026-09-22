@@ -1,11 +1,15 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-
 import { createDatabase, type Database } from './client';
-import { shops, staffUsers } from './schema';
+import {
+  organizationMemberships,
+  organizations,
+  shopMemberships,
+  shops,
+  users,
+} from './schema';
 
 type SeedTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
-
 const seedEnvironmentSchema = z.object({
   DATABASE_URL: z.string().url(),
   SEED_SHOP_NAME: z.string().trim().min(1).default('CukurPro Demo Shop'),
@@ -32,134 +36,172 @@ const seedEnvironmentSchema = z.object({
     .string()
     .min(12)
     .default('ReceptionPassword123!'),
+  SEED_PASSWORD_MODE: z.enum(['bcrypt', 'e2e']).default('bcrypt'),
 });
-
 type SeedConfig = z.infer<typeof seedEnvironmentSchema>;
 
-async function upsertStaff(
-  database: SeedTransaction,
+async function upsertMember(
+  tx: SeedTransaction,
   input: {
+    organizationId: string;
     shopId: string;
     name: string;
     email: string;
     password: string;
     role: 'owner' | 'staff';
+    passwordMode: 'bcrypt' | 'e2e';
   },
 ) {
-  const passwordHash = await Bun.password.hash(input.password);
-  const [account] = await database
-    .insert(staffUsers)
+  const passwordHash =
+    input.passwordMode === 'e2e'
+      ? `e2e:${input.password}`
+      : await Bun.password.hash(input.password);
+  const [user] = await tx
+    .insert(users)
     .values({
-      shopId: input.shopId,
       name: input.name,
       email: input.email.toLowerCase(),
       passwordHash,
-      role: input.role,
       active: true,
     })
     .onConflictDoUpdate({
-      target: staffUsers.email,
+      target: users.email,
       set: {
-        shopId: input.shopId,
         name: input.name,
         passwordHash,
-        role: input.role,
         active: true,
         updatedAt: new Date(),
       },
     })
-    .returning({ id: staffUsers.id });
-  if (!account) throw new Error(`Could not seed ${input.role} account.`);
+    .returning({ id: users.id });
+  if (!user) throw new Error(`Could not seed ${input.role} account.`);
+  await tx
+    .insert(organizationMemberships)
+    .values({
+      organizationId: input.organizationId,
+      userId: user.id,
+      role:
+        input.role === 'owner' ? 'organization_owner' : 'organization_member',
+    })
+    .onConflictDoUpdate({
+      target: [
+        organizationMemberships.organizationId,
+        organizationMemberships.userId,
+      ],
+      set: {
+        role:
+          input.role === 'owner' ? 'organization_owner' : 'organization_member',
+        active: true,
+        updatedAt: new Date(),
+      },
+    });
+  await tx
+    .insert(shopMemberships)
+    .values({
+      organizationId: input.organizationId,
+      shopId: input.shopId,
+      userId: user.id,
+      role: input.role === 'owner' ? 'shop_manager' : 'receptionist',
+    })
+    .onConflictDoUpdate({
+      target: [shopMemberships.shopId, shopMemberships.userId],
+      set: {
+        role: input.role === 'owner' ? 'shop_manager' : 'receptionist',
+        active: true,
+        updatedAt: new Date(),
+      },
+    });
+  // Keep the legacy compatibility row while Phase 9 contraction is deferred.
+  await tx.execute(sql`
+    insert into staff_users (id, user_id, shop_id, email, name, password_hash, role, active)
+    values (${user.id}, ${user.id}, ${input.shopId}, ${input.email.toLowerCase()}, ${input.name}, ${passwordHash}, ${input.role}, true)
+    on conflict (id) do update set
+      user_id = excluded.user_id,
+      shop_id = excluded.shop_id,
+      email = excluded.email,
+      name = excluded.name,
+      password_hash = excluded.password_hash,
+      role = excluded.role,
+      active = excluded.active,
+      updated_at = now()
+  `);
 }
 
 async function seed(config: SeedConfig): Promise<void> {
   const { client, database } = createDatabase(config.DATABASE_URL);
   try {
-    await database.transaction(async (transaction) => {
-      const existingOwner = await transaction
-        .select({ shopId: staffUsers.shopId })
-        .from(staffUsers)
-        .where(eq(staffUsers.email, config.SEED_OWNER_EMAIL.toLowerCase()))
+    await database.transaction(async (tx) => {
+      const slug = 'cukurpro-demo-shop';
+      let organization = await tx
+        .select()
+        .from(organizations)
+        .where(eq(organizations.slug, slug))
         .limit(1)
-        .then((rows) => rows[0]);
-
-      let shopId = existingOwner?.shopId;
-      if (!shopId) {
-        const existingShop = await transaction
-          .select({ id: shops.id })
-          .from(shops)
-          .where(
-            and(
-              eq(shops.name, config.SEED_SHOP_NAME),
-              eq(shops.email, config.SEED_SHOP_EMAIL.toLowerCase()),
-            ),
-          )
-          .limit(1)
-          .then((rows) => rows[0]);
-        shopId = existingShop?.id;
-      }
-
-      if (!shopId) {
-        const [shop] = await transaction
-          .insert(shops)
-          .values({
-            name: config.SEED_SHOP_NAME,
-            phone: config.SEED_SHOP_PHONE,
-            email: config.SEED_SHOP_EMAIL.toLowerCase(),
-            address: config.SEED_SHOP_ADDRESS,
-            timezone: config.SEED_SHOP_TIMEZONE,
-          })
-          .returning({ id: shops.id });
-        if (!shop) throw new Error('Could not seed the demo shop.');
-        shopId = shop.id;
-      } else {
-        await transaction
+        .then((r) => r[0]);
+      if (!organization)
+        [organization] = await tx
+          .insert(organizations)
+          .values({ name: config.SEED_SHOP_NAME, slug, lifecycle: 'active' })
+          .returning();
+      if (!organization)
+        throw new Error('Could not seed the demo organization.');
+      let shop = await tx
+        .select()
+        .from(shops)
+        .where(
+          and(eq(shops.organizationId, organization.id), eq(shops.slug, slug)),
+        )
+        .limit(1)
+        .then((r) => r[0]);
+      const values = {
+        organizationId: organization.id,
+        slug,
+        name: config.SEED_SHOP_NAME,
+        phone: config.SEED_SHOP_PHONE,
+        email: config.SEED_SHOP_EMAIL.toLowerCase(),
+        address: config.SEED_SHOP_ADDRESS,
+        timezone: config.SEED_SHOP_TIMEZONE,
+        updatedAt: new Date(),
+      };
+      if (shop)
+        [shop] = await tx
           .update(shops)
-          .set({
-            name: config.SEED_SHOP_NAME,
-            phone: config.SEED_SHOP_PHONE,
-            email: config.SEED_SHOP_EMAIL.toLowerCase(),
-            address: config.SEED_SHOP_ADDRESS,
-            timezone: config.SEED_SHOP_TIMEZONE,
-            updatedAt: new Date(),
-          })
-          .where(eq(shops.id, shopId));
-      }
-
-      await upsertStaff(transaction, {
-        shopId,
+          .set(values)
+          .where(eq(shops.id, shop.id))
+          .returning();
+      else [shop] = await tx.insert(shops).values(values).returning();
+      if (!shop) throw new Error('Could not seed the demo shop.');
+      await upsertMember(tx, {
+        organizationId: organization.id,
+        shopId: shop.id,
         name: config.SEED_OWNER_NAME,
         email: config.SEED_OWNER_EMAIL,
         password: config.SEED_OWNER_PASSWORD,
         role: 'owner',
+        passwordMode: config.SEED_PASSWORD_MODE,
       });
-      await upsertStaff(transaction, {
-        shopId,
+      await upsertMember(tx, {
+        organizationId: organization.id,
+        shopId: shop.id,
         name: config.SEED_STAFF_NAME,
         email: config.SEED_STAFF_EMAIL,
         password: config.SEED_STAFF_PASSWORD,
         role: 'staff',
+        passwordMode: config.SEED_PASSWORD_MODE,
       });
-      await upsertStaff(transaction, {
-        shopId,
+      await upsertMember(tx, {
+        organizationId: organization.id,
+        shopId: shop.id,
         name: config.SEED_SECOND_STAFF_NAME,
         email: config.SEED_SECOND_STAFF_EMAIL,
         password: config.SEED_SECOND_STAFF_PASSWORD,
         role: 'staff',
+        passwordMode: config.SEED_PASSWORD_MODE,
       });
     });
-    console.log(
-      `Seeded demo shop with owner ${config.SEED_OWNER_EMAIL}, staff ${config.SEED_STAFF_EMAIL}, and staff ${config.SEED_SECOND_STAFF_EMAIL}.`,
-    );
   } finally {
     await client.end();
   }
 }
 
-const parsed = seedEnvironmentSchema.safeParse(process.env);
-if (!parsed.success) {
-  console.error('Invalid seed environment configuration.');
-  process.exit(1);
-}
-
-await seed(parsed.data);
+await seed(seedEnvironmentSchema.parse(process.env));

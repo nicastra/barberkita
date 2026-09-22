@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiRequest } from './client';
+import { apiRequest, scopedShopPath } from './client';
 
 const shopSchema = z.object({
   id: z.string().uuid(),
@@ -28,7 +28,7 @@ const staffResponseSchema = z.object({ staff: staffSchema });
 export type StaffMember = z.infer<typeof staffSchema>;
 
 export function getShop() {
-  return apiRequest('/api/shop', { schema: shopResponseSchema });
+  return apiRequest(scopedShopPath(''), { schema: shopResponseSchema });
 }
 
 export function updateShop(
@@ -36,7 +36,7 @@ export function updateShop(
     Pick<Shop, 'name' | 'phone' | 'email' | 'address' | 'timezone'>
   >,
 ) {
-  return apiRequest('/api/shop', {
+  return apiRequest(scopedShopPath(''), {
     method: 'PATCH',
     body: input,
     schema: shopResponseSchema,
@@ -44,7 +44,7 @@ export function updateShop(
 }
 
 export function listStaff() {
-  return apiRequest('/api/auth/staff', { schema: staffListSchema });
+  return apiRequest(scopedShopPath('/staff'), { schema: staffListSchema });
 }
 
 export function createStaff(input: {
@@ -53,7 +53,7 @@ export function createStaff(input: {
   password: string;
   role: 'staff' | 'owner';
 }) {
-  return apiRequest('/api/auth/staff', {
+  return apiRequest(scopedShopPath('/staff'), {
     method: 'POST',
     body: input,
     schema: staffResponseSchema,
@@ -70,7 +70,7 @@ export function updateStaff(
     active?: boolean;
   },
 ) {
-  return apiRequest(`/api/auth/staff/${id}`, {
+  return apiRequest(scopedShopPath(`/staff/${id}`), {
     method: 'PATCH',
     body: input,
     schema: staffResponseSchema,
@@ -78,7 +78,7 @@ export function updateStaff(
 }
 
 export function deleteStaff(id: string) {
-  return apiRequest(`/api/auth/staff/${id}`, {
+  return apiRequest(scopedShopPath(`/staff/${id}`), {
     method: 'DELETE',
     acceptedStatuses: [204],
     schema: z.null(),

@@ -19,7 +19,12 @@
     "check": "bun run format:check && bun run typecheck && bun run test && bun run build",
     "db:generate": "bun run --cwd server db:generate",
     "db:migrate": "bun run --cwd server db:migrate",
-    "db:seed": "bun run --cwd server db:seed"
+    "db:seed": "bun run --cwd server db:seed",
+    "db:seed-tenant": "NODE_PATH=server/node_modules bun scripts/seed-tenant.ts",
+    "db:migrate-saas": "NODE_PATH=server/node_modules bun scripts/migrate-to-saas.ts",
+    "db:reconcile-saas": "NODE_PATH=server/node_modules bun scripts/reconcile-saas.ts",
+    "db:contract-saas": "NODE_PATH=server/node_modules bun scripts/contract-saas.ts",
+    "db:migrate-saas-upgrade": "bun run db:migrate && bun run db:migrate-saas && bun run db:reconcile-saas && bun run db:contract-saas"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

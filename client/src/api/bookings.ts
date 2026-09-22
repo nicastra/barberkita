@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { availabilitySchema } from './catalog';
-import { apiRequest } from './client';
+import { apiRequest, scopedShopPath } from './client';
 import { customerSchema } from './customers';
 
 const bookingStatusSchema = z.enum([
@@ -101,7 +101,7 @@ export function listBookings(filters?: {
   if (filters?.status) query.set('status', filters.status);
   if (filters?.date) query.set('date', filters.date);
   const suffix = query.size ? `?${query.toString()}` : '';
-  return apiRequest(`/api/bookings${suffix}`, {
+  return apiRequest(scopedShopPath(`/bookings${suffix}`), {
     schema: z.object({ bookings: z.array(bookingSchema) }),
   });
 }
@@ -109,7 +109,7 @@ export function listBookings(filters?: {
 export function createStaffBooking(
   input: BookingSelection & { customerId: string; notes: string },
 ) {
-  return apiRequest('/api/bookings', {
+  return apiRequest(scopedShopPath('/bookings'), {
     method: 'POST',
     body: input,
     schema: bookingResponseSchema,
@@ -119,7 +119,7 @@ export function createStaffBooking(
 export function createWalkInBooking(
   input: BookingSelection & { customerId: string; notes: string },
 ) {
-  return apiRequest('/api/bookings/walk-ins', {
+  return apiRequest(scopedShopPath('/bookings/walk-ins'), {
     method: 'POST',
     body: input,
     schema: bookingResponseSchema,
@@ -127,14 +127,14 @@ export function createWalkInBooking(
 }
 
 export function confirmBooking(id: string) {
-  return apiRequest(`/api/bookings/${id}/confirm`, {
+  return apiRequest(scopedShopPath(`/bookings/${id}/confirm`), {
     method: 'POST',
     schema: bookingResponseSchema,
   });
 }
 
 export function cancelBooking(id: string) {
-  return apiRequest(`/api/bookings/${id}/cancel`, {
+  return apiRequest(scopedShopPath(`/bookings/${id}/cancel`), {
     method: 'POST',
     schema: bookingResponseSchema,
   });
@@ -144,7 +144,7 @@ function operationalAction(
   id: string,
   action: 'check-in' | 'start' | 'complete' | 'no-show',
 ) {
-  return apiRequest(`/api/bookings/${id}/${action}`, {
+  return apiRequest(scopedShopPath(`/bookings/${id}/${action}`), {
     method: 'POST',
     schema: bookingResponseSchema,
   });
@@ -157,20 +157,22 @@ export const completeBooking = (id: string) =>
 export const markNoShow = (id: string) => operationalAction(id, 'no-show');
 
 export function rescheduleBooking(id: string, input: BookingSelection) {
-  return apiRequest(`/api/bookings/${id}/reschedule`, {
+  return apiRequest(scopedShopPath(`/bookings/${id}/reschedule`), {
     method: 'PATCH',
     body: input,
     schema: bookingResponseSchema,
   });
 }
 
-export function getPublicOptions() {
-  return apiRequest('/api/public/options', {
+export function getPublicOptions(shopSlug: string) {
+  const path = `/api/public/shops/${encodeURIComponent(shopSlug)}/options`;
+  return apiRequest(path, {
     schema: z.object({ options: publicOptionsSchema }),
   });
 }
 
 export function getPublicAvailability(input: {
+  shopSlug: string;
   serviceId: string;
   date: string;
   barberId?: string;
@@ -180,17 +182,20 @@ export function getPublicAvailability(input: {
     date: input.date,
   });
   if (input.barberId) query.set('barberId', input.barberId);
-  return apiRequest(`/api/public/availability?${query.toString()}`, {
+  const path = `/api/public/shops/${encodeURIComponent(input.shopSlug)}/availability?${query.toString()}`;
+  return apiRequest(path, {
     schema: z.object({ availability: availabilitySchema }),
   });
 }
 
 export function createPublicBooking(
   input: BookingSelection & {
+    shopSlug: string;
     customer: { name: string; phone: string; email: string | null };
   },
 ) {
-  return apiRequest('/api/public/bookings', {
+  const path = `/api/public/shops/${encodeURIComponent(input.shopSlug)}/bookings`;
+  return apiRequest(path, {
     method: 'POST',
     body: input,
     schema: bookingResponseSchema,

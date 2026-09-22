@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { requireAuth, requireOwner } from '../middleware/auth';
 import {
   createStaffSchema,
-  setupSchema,
+  reauthenticateSchema,
   signInSchema,
   staffIdSchema,
   updateStaffSchema,
@@ -14,6 +14,7 @@ import {
   type AuthService,
   type AuthUser,
 } from '../services/auth-service';
+import { tenantShopParamsSchema } from '../schemas/tenant';
 
 function publicUser(user: AuthUser) {
   return {
@@ -32,6 +33,7 @@ function sessionCookie(token: string, secure: boolean, maxAge: number): string {
 export function createAuthRoutes(
   authService: AuthService,
   secureCookies = false,
+  enableLegacyStaff = true,
 ) {
   const app = new Hono<{
     Variables: { user: AuthUser; sessionToken: string };
@@ -65,30 +67,74 @@ export function createAuthRoutes(
     );
     return context.json({ user: publicUser(result.user) });
   });
-  app.post('/setup', zValidator('json', setupSchema), async (context) => {
-    const result = await authService.setupOwner(context.req.valid('json'));
-    if (!result)
-      return context.json(
-        {
-          error: {
-            code: 'SETUP_COMPLETE',
-            message: 'Initial owner setup has already been completed.',
-          },
-        },
-        409,
-      );
-    return context.json(
-      { user: publicUser(result.user), shop: result.shop },
-      201,
-    );
-  });
   app.post('/sign-out', requireAuth(authService), async (context) => {
     await authService.signOut(context.get('sessionToken'));
     context.header('Set-Cookie', sessionCookie('', secureCookies, 0));
     return context.body(null, 204);
   });
+  app.post(
+    '/reauthenticate',
+    requireAuth(authService),
+    zValidator('json', reauthenticateSchema),
+    async (context) => {
+      const reauthenticate = authService.reauthenticate;
+      const valid = reauthenticate
+        ? await reauthenticate(
+            context.get('sessionToken'),
+            context.req.valid('json').password,
+          )
+        : false;
+      return valid
+        ? context.json({ reauthenticated: true })
+        : context.json(
+            {
+              error: {
+                code: 'INVALID_CREDENTIALS',
+                message: 'Invalid password.',
+              },
+            },
+            401,
+          );
+    },
+  );
   app.get('/me', requireAuth(authService), (context) =>
     context.json({ user: publicUser(context.get('user')) }),
+  );
+  app.post(
+    '/switch-shop/:shopId',
+    requireAuth(authService),
+    zValidator('param', tenantShopParamsSchema),
+    async (context) => {
+      const switchShop = authService.switchShop;
+      if (!switchShop)
+        return context.json(
+          {
+            error: {
+              code: 'TENANT_ACCESS_DENIED',
+              reason: 'INVALID_SCOPE',
+              message:
+                'Branch switching is unavailable until migration completes.',
+            },
+          },
+          403,
+        );
+      const user = await switchShop(
+        context.get('sessionToken'),
+        context.req.valid('param').shopId,
+      );
+      return user
+        ? context.json({ user: publicUser(user) })
+        : context.json(
+            {
+              error: {
+                code: 'TENANT_ACCESS_DENIED',
+                reason: 'MEMBERSHIP_REQUIRED',
+                message: 'You do not have access to this shop.',
+              },
+            },
+            403,
+          );
+    },
   );
   const staff = new Hono<{
     Variables: { user: AuthUser; sessionToken: string };
@@ -140,6 +186,6 @@ export function createAuthRoutes(
           404,
         );
   });
-  app.route('/staff', staff);
+  if (enableLegacyStaff) app.route('/staff', staff);
   return app;
 }

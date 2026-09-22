@@ -16,6 +16,7 @@ import {
   shops,
 } from '../db/schema';
 import type { AuthUser } from './auth-service';
+import { auditScope } from './audit-scope';
 import type {
   CreateCheckoutInput,
   PaymentCorrectionInput,
@@ -110,6 +111,10 @@ export interface CheckoutService {
   ): Promise<CheckoutView[]>;
   create(actor: AuthUser, input: CreateCheckoutInput): Promise<CheckoutView>;
   get(actor: AuthUser, id: string): Promise<CheckoutView | null>;
+  getByReceiptNumber?(
+    actor: AuthUser,
+    receiptNumber: string,
+  ): Promise<CheckoutView | null>;
   recordPayment(
     actor: AuthUser,
     id: string,
@@ -387,6 +392,7 @@ export function createCheckoutService(database: Database): CheckoutService {
           .returning();
         if (!checkout) throw new Error('Checkout creation failed.');
         await transaction.insert(checkoutItems).values({
+          shopId: actor.shopId,
           checkoutId: checkout.id,
           serviceId: booking.service.id,
           description: booking.service.name,
@@ -395,6 +401,7 @@ export function createCheckoutService(database: Database): CheckoutService {
           lineTotalRupiah: booking.service.priceRupiah,
         });
         await transaction.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'checkout_created',
           entityType: 'checkout',
@@ -413,6 +420,20 @@ export function createCheckoutService(database: Database): CheckoutService {
 
     async get(actor, id) {
       return getById(actor.shopId, id);
+    },
+    async getByReceiptNumber(actor, receiptNumber) {
+      const row = await database
+        .select({ id: checkouts.id })
+        .from(checkouts)
+        .where(
+          and(
+            eq(checkouts.shopId, actor.shopId),
+            eq(checkouts.receiptNumber, receiptNumber),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+      return row ? getById(actor.shopId, row.id) : null;
     },
 
     async recordPayment(actor, id, input) {
@@ -476,6 +497,7 @@ export function createCheckoutService(database: Database): CheckoutService {
             409,
           );
         await transaction.insert(checkoutPayments).values({
+          shopId: actor.shopId,
           checkoutId: id,
           amountRupiah: input.amountRupiah,
           method: input.method,
@@ -490,6 +512,7 @@ export function createCheckoutService(database: Database): CheckoutService {
           correctionRows.length > 0,
         );
         await transaction.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'payment_recorded',
           entityType: 'checkout',
@@ -585,6 +608,7 @@ export function createCheckoutService(database: Database): CheckoutService {
             409,
           );
         await transaction.insert(paymentCorrections).values({
+          shopId: actor.shopId,
           paymentId,
           kind: input.kind,
           amountRupiah: amount,
@@ -609,6 +633,7 @@ export function createCheckoutService(database: Database): CheckoutService {
           allCorrections.reduce((sum, row) => sum + row.amountRupiah, 0);
         await updateStatus(transaction, checkout, paid, true);
         await transaction.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: input.kind === 'void' ? 'payment_voided' : 'payment_refunded',
           entityType: 'checkout_payment',

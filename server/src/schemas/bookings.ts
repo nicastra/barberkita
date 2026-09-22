@@ -14,6 +14,14 @@ export const createStaffBookingSchema = bookingSelectionSchema.extend({
 export const rescheduleBookingSchema = bookingSelectionSchema;
 
 export const bookingIdSchema = z.object({ id: z.string().uuid() });
+export const confirmationCodeSchema = z.object({
+  confirmationCode: z
+    .string()
+    .trim()
+    .min(8)
+    .max(64)
+    .regex(/^[A-Z0-9_-]+$/),
+});
 
 export const bookingQuerySchema = z.object({
   customerId: z.string().uuid().optional(),

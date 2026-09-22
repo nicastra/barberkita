@@ -7,14 +7,13 @@ import {
   confirmBooking,
   createStaffBooking,
   createWalkInBooking,
-  getPublicAvailability,
   rescheduleBooking,
   startBooking,
   markNoShow,
   type Booking,
   type PublicOptions,
 } from '@/api/bookings';
-import type { Availability } from '@/api/catalog';
+import { getAvailability, type Availability } from '@/api/catalog';
 import { ApiError } from '@/api/client';
 import type { Customer } from '@/api/customers';
 import { Button } from '@/components/ui/button';
@@ -100,7 +99,7 @@ export function AppointmentPanel({
     if (!serviceId) return;
     setSaving(true);
     try {
-      const response = await getPublicAvailability({
+      const response = await getAvailability({
         serviceId,
         date,
         ...(barberId ? { barberId } : {}),

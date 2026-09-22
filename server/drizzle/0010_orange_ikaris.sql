@@ -1,0 +1,2 @@
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_organization_shop_fk" FOREIGN KEY ("organization_id","shop_id") REFERENCES "public"."shops"("organization_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tenant_audit_logs" ADD CONSTRAINT "tenant_audit_logs_organization_shop_fk" FOREIGN KEY ("organization_id","shop_id") REFERENCES "public"."shops"("organization_id","id") ON DELETE no action ON UPDATE no action;

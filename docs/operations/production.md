@@ -36,19 +36,28 @@ Display the public key and copy its single, unwrapped line (including the
 cat ~/.ssh/cukurpro_deploy.pub
 ```
 
-As the VPS provider's initial root user, replace the value assigned to
-`DEPLOY_PUBLIC_KEY` below with that copied line and run:
+As the VPS provider's initial root user (or an account with `sudo`), replace
+the value assigned to `DEPLOY_PUBLIC_KEY` below with that copied line and run:
+The `sudo tee` form is intentional: shell redirection (`>>`) is otherwise
+performed by your current, possibly non-root shell.
+
+Important: run this setup block from the provider's initial root session (or
+from a separate administrator account that already has a working `sudo`
+password). Do **not** run it from the new `deploy` session. `deploy` was created
+with `--disabled-password`, so a `sudo` prompt asking for the `deploy` password
+will fail. If you no longer have the initial root session, use the VPS
+provider's web/serial console to complete this step.
 
 ```sh
-apt update
-apt install -y ca-certificates curl git ufw
-adduser --disabled-password --gecos '' deploy
-install -d -m 0700 -o deploy -g deploy /home/deploy/.ssh
+sudo apt update
+sudo apt install -y ca-certificates curl git ufw
+sudo adduser --disabled-password --gecos '' deploy
+sudo install -d -m 0700 -o deploy -g deploy /home/deploy/.ssh
 DEPLOY_PUBLIC_KEY='ssh-ed25519 REPLACE_WITH_DEPLOY_PUBLIC_KEY'
-printf '%s\n' "$DEPLOY_PUBLIC_KEY" >>/home/deploy/.ssh/authorized_keys
-chown deploy:deploy /home/deploy/.ssh/authorized_keys
-chmod 0600 /home/deploy/.ssh/authorized_keys
-usermod -aG sudo deploy
+printf '%s\n' "$DEPLOY_PUBLIC_KEY" | sudo tee -a /home/deploy/.ssh/authorized_keys >/dev/null
+sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys
+sudo chmod 0600 /home/deploy/.ssh/authorized_keys
+sudo usermod -aG sudo deploy
 ```
 
 The example uses `>>` so an existing administrator key is not overwritten. If
@@ -62,7 +71,7 @@ ssh-keygen -lf ~/.ssh/cukurpro_deploy.pub
 On the VPS, compare it with the fingerprint(s) installed for `deploy`:
 
 ```sh
-ssh-keygen -lf /home/deploy/.ssh/authorized_keys
+sudo ssh-keygen -lf /home/deploy/.ssh/authorized_keys
 ```
 
 The fingerprints should include the same Ed25519 fingerprint. From your local
@@ -82,7 +91,11 @@ ssh -i ~/.ssh/cukurpro_deploy -o IdentitiesOnly=yes deploy@VPS_IP
 The file below is an SSH _drop-in_: Ubuntu's main `/etc/ssh/sshd_config`
 normally includes every `.conf` file in `/etc/ssh/sshd_config.d/`. The `99-`
 prefix makes this site-specific file load late, after most package defaults.
-Create it as root with `sudo` (or run the same commands from a root shell):
+Create it from that same root/administrator session (not from `deploy`):
+
+When pasting the heredoc below, do not copy Markdown indentation into the
+terminal. The closing `EOF` must be completely flush-left (no spaces or tabs),
+and it must be on its own line.
 
 ```sh
 sudo install -d -m 0755 /etc/ssh/sshd_config.d
@@ -137,10 +150,14 @@ until the test succeeds. If `sshd -t` fails, or the second login fails, do not
 close the working session; fix the file and validate again. If you do get
 locked out, use the VPS provider's console/recovery terminal to restore access.
 
-Enable the firewall. If SSH uses a custom port, allow that port instead of the
-`OpenSSH` profile before enabling UFW.
+Enable the firewall from the same root/administrator session. Running these
+commands as `deploy` produces `ERROR: You need to be root`; use the VPS
+provider's web/serial console if you no longer have root access. If SSH uses a
+custom port, allow that port instead of the `OpenSSH` profile before enabling
+UFW. Confirm the SSH port first so you do not lock yourself out:
 
 ```sh
+ss -lntp | grep -E 'sshd|:22 '
 ufw allow OpenSSH
 ufw allow 80/tcp
 ufw allow 443/tcp
@@ -151,7 +168,10 @@ ufw status verbose
 
 ## 2. Install Docker Engine and Compose
 
-Use Docker's Ubuntu repository rather than the older distribution package:
+Continue from the root/administrator session used above. These commands write
+under `/etc` and install system packages, so running them as `deploy` produces
+permission errors. Use Docker's Ubuntu repository rather than the older
+distribution package:
 
 ```sh
 install -m 0755 -d /etc/apt/keyrings
@@ -165,6 +185,20 @@ apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker
 systemctl enable --now docker
 usermod -aG docker deploy
 ```
+
+If you are using a different administrator account with a working `sudo`
+password, the repository-file command must use `sudo tee` (not `sudo ... >`),
+because the shell handles `>` before `sudo`:
+
+```sh
+printf '%s\n' \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+```
+
+The `deploy` account in this runbook has a disabled password, so it cannot use
+that `sudo` alternative. Use the provider's root/web console for this one-time
+installation, then reconnect as `deploy` after `usermod -aG docker deploy`.
 
 The `docker` group is root-equivalent. Log out and back in, then verify as
 `deploy`:
@@ -299,17 +333,32 @@ references are unchanged, and a new pre-deployment backup is still created.
 
 ## 7. Health, TLS, ports, and logs
 
-Run after every deployment:
+Run the public HTTPS checks from your **local computer**. This confirms that
+public DNS, the VPS firewall, Caddy, and the certificate all work from outside
+the VPS. Replace `app.example.com` with the real application hostname:
 
 ```sh
 curl --fail --show-error --silent https://app.example.com/health
 curl --fail --show-error --silent https://app.example.com/api/health
 openssl s_client -connect app.example.com:443 -servername app.example.com </dev/null 2>/dev/null \
   | openssl x509 -noout -subject -issuer -dates
+```
+
+SSH into the VPS as `deploy`, then run the container checks there. `/opt/cukurpro`
+and the production Docker stack exist only on the VPS:
+
+```sh
+ssh -i ~/.ssh/cukurpro_deploy -o IdentitiesOnly=yes deploy@VPS_IP
 cd /opt/cukurpro
 docker compose --env-file production.env -f compose.production.yaml ps
 docker compose --env-file production.env -f compose.production.yaml logs --tail=100 caddy server server-migrate
-sudo ss -lntup
+```
+
+Finally, inspect host listening ports from the VPS provider's root/admin
+console. The `deploy` account cannot use password-based `sudo` in this setup:
+
+```sh
+ss -lntup
 ```
 
 The first endpoint is served by the client container through Caddy. The second
@@ -319,16 +368,17 @@ Caddy certificate data is persisted in `cukurpro_caddy_data`.
 
 ## 8. Release acceptance
 
-CI's clean-database acceptance test proves setup is single-use, the session
-cookie contains `HttpOnly`, `Secure`, and `SameSite=Lax`, protected API access,
-public and staff bookings, a booking conflict, checkout, and reporting. After
+CI's migrated-fixture acceptance test proves the session cookie contains
+`HttpOnly`, `Secure`, and `SameSite=Lax`, protected tenant API access,
+public and staff bookings, a booking conflict, checkout, reporting, invitation
+acceptance, migration reconciliation, guarded contraction, and isolated restore.
+After
 the first production deployment, complete the browser journey in
 `docs/release-checklist.md` using non-customer test records, and inspect the
 sign-in response in browser developer tools to reconfirm the cookie flags.
 
-Do not call owner setup on an initialized production database merely as a
-test. A valid `POST /api/auth/setup` must return `409 SETUP_COMPLETE` after the
-first owner exists. Confirm a protected request using an operator-owned test
+Organization creation is provider-approved and the legacy setup endpoint is
+disabled in production. Confirm a protected request using an operator-owned test
 account and a temporary cookie jar:
 
 ```sh

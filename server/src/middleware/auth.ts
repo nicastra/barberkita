@@ -1,8 +1,21 @@
 import { createMiddleware } from 'hono/factory';
 
 import type { AuthService, AuthUser } from '../services/auth-service';
+import type { TenantContext } from '../services/tenant-service';
 
-export type AuthVariables = { user: AuthUser; sessionToken: string };
+export interface SupportContext {
+  grantId: string;
+  organizationId: string;
+  expiresAt: string;
+  breakGlass: boolean;
+}
+
+export type AuthVariables = {
+  user: AuthUser;
+  sessionToken: string;
+  tenant?: TenantContext;
+  support?: SupportContext;
+};
 
 export function requireAuth(authService: AuthService) {
   return createMiddleware<{ Variables: AuthVariables }>(
@@ -35,7 +48,11 @@ export function requireAuth(authService: AuthService) {
           },
           401,
         );
-      context.set('user', user);
+      const tenant = context.get('tenant');
+      context.set(
+        'user',
+        tenant ? { ...user, shopId: tenant.shopId, tenant } : user,
+      );
       context.set('sessionToken', token);
       await next();
     },
@@ -45,10 +62,45 @@ export function requireAuth(authService: AuthService) {
 export function requireOwner() {
   return createMiddleware<{ Variables: AuthVariables }>(
     async (context, next) => {
-      if (context.get('user').role !== 'owner')
+      const user = context.get('user');
+      const tenant = context.get('tenant');
+      const tenantOwner =
+        tenant &&
+        (tenant.shopRole === 'shop_manager' ||
+          tenant.organizationRole === 'organization_owner' ||
+          tenant.organizationRole === 'organization_admin');
+      if (user.role !== 'owner' && !tenantOwner)
         return context.json(
           {
-            error: { code: 'FORBIDDEN', message: 'Owner access is required.' },
+            error: {
+              code: tenant ? 'TENANT_ROLE_FORBIDDEN' : 'FORBIDDEN',
+              message: tenant
+                ? 'A manager or organization administrator role is required.'
+                : 'Owner access is required.',
+            },
+          },
+          403,
+        );
+      await next();
+    },
+  );
+}
+
+/** Require a password recheck performed within the configured time window. */
+export function requireRecentReauthentication(
+  authService: AuthService,
+  maxAgeMs = 15 * 60_000,
+) {
+  return createMiddleware<{ Variables: AuthVariables }>(
+    async (context, next) => {
+      const check = authService.hasRecentReauthentication;
+      if (!check || !(await check(context.get('sessionToken'), maxAgeMs)))
+        return context.json(
+          {
+            error: {
+              code: 'REAUTHENTICATION_REQUIRED',
+              message: 'Recent reauthentication is required for this action.',
+            },
           },
           403,
         );

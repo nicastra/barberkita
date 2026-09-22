@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiRequest } from './client';
+import { apiRequest, scopedShopPath } from './client';
 
 const correctionSchema = z.object({
   id: z.string().uuid(),
@@ -83,7 +83,7 @@ export function listCheckouts(filters?: {
   if (filters?.query) query.set('query', filters.query);
   if (filters?.status) query.set('status', filters.status);
   const suffix = query.size ? `?${query.toString()}` : '';
-  return apiRequest(`/api/checkouts${suffix}`, {
+  return apiRequest(scopedShopPath(`/checkouts${suffix}`), {
     schema: z.object({ checkouts: z.array(checkoutSchema) }),
   });
 }
@@ -93,7 +93,7 @@ export function createCheckout(input: {
   discountRupiah: number;
   adjustmentReason: string;
 }) {
-  return apiRequest('/api/checkouts', {
+  return apiRequest(scopedShopPath('/checkouts'), {
     method: 'POST',
     body: input,
     schema: checkoutResponseSchema,
@@ -109,7 +109,7 @@ export function recordPayment(
     idempotencyKey: string;
   },
 ) {
-  return apiRequest(`/api/checkouts/${id}/payments`, {
+  return apiRequest(scopedShopPath(`/checkouts/${id}/payments`), {
     method: 'POST',
     body: input,
     schema: checkoutResponseSchema,
@@ -127,7 +127,9 @@ export function correctPayment(
   },
 ) {
   return apiRequest(
-    `/api/checkouts/${checkoutId}/payments/${paymentId}/corrections`,
+    scopedShopPath(
+      `/checkouts/${checkoutId}/payments/${paymentId}/corrections`,
+    ),
     {
       method: 'POST',
       body: input,

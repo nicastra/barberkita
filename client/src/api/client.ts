@@ -6,6 +6,27 @@ const clientEnvironmentSchema = z.object({
 
 const environment = clientEnvironmentSchema.parse(import.meta.env);
 
+let activeShopId: string | null =
+  typeof window === 'undefined'
+    ? null
+    : window.localStorage.getItem('cukurpro_active_shop');
+
+/** The branch is a candidate scope; the API still verifies membership. */
+export function setActiveShopId(shopId: string | null): void {
+  activeShopId = shopId;
+  if (typeof window === 'undefined') return;
+  if (shopId) window.localStorage.setItem('cukurpro_active_shop', shopId);
+  else window.localStorage.removeItem('cukurpro_active_shop');
+}
+
+export function scopedShopPath(path: string): string {
+  // Never fall back to a legacy unscoped endpoint. Before session resolution
+  // completes, use an impossible scope so the API returns a safe authorization
+  // failure rather than another tenant's data.
+  const shopId = activeShopId ?? '00000000-0000-0000-0000-000000000000';
+  return `/api/shops/${shopId}${path}`;
+}
+
 export class ApiError extends Error {
   public readonly status: number | undefined;
   public readonly code: string | undefined;

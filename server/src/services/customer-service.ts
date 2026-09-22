@@ -3,6 +3,7 @@ import { and, asc, eq, ilike, or } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { auditLogs, customers } from '../db/schema';
 import type { AuthUser } from './auth-service';
+import { auditScope } from './audit-scope';
 
 export type CustomerInput = {
   name: string;
@@ -108,6 +109,15 @@ export function createCustomerService(database: Database): CustomerService {
         .returning();
       if (customer) {
         await database.insert(auditLogs).values({
+          ...(actorStaffUserId
+            ? auditScope({
+                id: actorStaffUserId,
+                shopId,
+                name: '',
+                email: 'audit@local.invalid',
+                role: 'staff',
+              })
+            : { organizationId: null, shopId }),
           actorStaffUserId: actorStaffUserId ?? null,
           action: 'customer_created',
           entityType: 'customer',
@@ -146,6 +156,7 @@ export function createCustomerService(database: Database): CustomerService {
           .returning();
         if (!customer) return null;
         await database.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'customer_updated',
           entityType: 'customer',

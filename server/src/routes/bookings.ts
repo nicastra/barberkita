@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth';
 import {
   bookingIdSchema,
+  confirmationCodeSchema,
   bookingQuerySchema,
   createStaffBookingSchema,
   rescheduleBookingSchema,
@@ -55,6 +56,24 @@ export function createBookingRoutes(
       },
       201,
     ),
+  );
+  app.get(
+    '/lookup/:confirmationCode',
+    zValidator('param', confirmationCodeSchema),
+    async (context) => {
+      const booking = bookingService.getByConfirmationCode
+        ? await bookingService.getByConfirmationCode(
+            context.get('user'),
+            context.req.valid('param').confirmationCode,
+          )
+        : null;
+      return booking
+        ? context.json({ booking })
+        : context.json(
+            { error: { code: 'NOT_FOUND', message: 'Booking not found.' } },
+            404,
+          );
+    },
   );
   app.post(
     '/walk-ins',

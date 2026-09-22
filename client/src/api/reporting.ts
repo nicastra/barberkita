@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiRequest } from './client';
+import { apiRequest, scopedShopPath } from './client';
 
 const performanceRowSchema = z.object({
   id: z.string(),
@@ -77,7 +77,7 @@ export async function getDashboard(
   signal?: AbortSignal,
 ): Promise<Dashboard> {
   const response = await apiRequest(
-    `/api/reports/dashboard?${query({ date })}`,
+    scopedShopPath(`/dashboard?${query({ date })}`),
     {
       schema: z.object({ dashboard: dashboardSchema }),
       signal,
@@ -92,7 +92,7 @@ export async function getRevenueReport(
   signal?: AbortSignal,
 ): Promise<RevenueReport> {
   const response = await apiRequest(
-    `/api/reports/revenue?${query({ from, to })}`,
+    scopedShopPath(`/reports/revenue?${query({ from, to })}`),
     {
       schema: z.object({ report: revenueReportSchema }),
       signal,
@@ -107,7 +107,7 @@ export async function getPerformanceReport(
   signal?: AbortSignal,
 ): Promise<PerformanceReport> {
   const response = await apiRequest(
-    `/api/reports/performance?${query({ from, to })}`,
+    scopedShopPath(`/reports/performance?${query({ from, to })}`),
     {
       schema: z.object({ report: performanceReportSchema }),
       signal,

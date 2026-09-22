@@ -9,13 +9,15 @@ import {
   barberServices,
   barberWorkingHours,
   services,
-  staffUsers,
+  shopMemberships,
+  users,
 } from '../db/schema';
 import type {
   ScheduleExceptionInput,
   WeeklyRangeInput,
 } from '../schemas/catalog';
 import type { AuthUser } from './auth-service';
+import { auditScope } from './audit-scope';
 
 export type ServiceInput = {
   name: string;
@@ -191,13 +193,20 @@ export function createCatalogService(database: Database): CatalogService {
   async function validateStaff(shopId: string, staffUserId: string | null) {
     if (staffUserId === null) return;
     const staff = await database
-      .select({ id: staffUsers.id })
-      .from(staffUsers)
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(
+        shopMemberships,
+        and(
+          eq(shopMemberships.userId, users.id),
+          eq(shopMemberships.shopId, shopId),
+        ),
+      )
       .where(
         and(
-          eq(staffUsers.id, staffUserId),
-          eq(staffUsers.shopId, shopId),
-          eq(staffUsers.active, true),
+          eq(users.id, staffUserId),
+          eq(users.active, true),
+          eq(shopMemberships.active, true),
         ),
       )
       .limit(1)
@@ -271,6 +280,7 @@ export function createCatalogService(database: Database): CatalogService {
         .returning();
       if (!service) throw new Error('Service creation failed.');
       await database.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: 'service_created',
         entityType: 'service',
@@ -286,6 +296,7 @@ export function createCatalogService(database: Database): CatalogService {
         .returning();
       if (!service) return null;
       await database.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: 'service_updated',
         entityType: 'service',
@@ -325,6 +336,7 @@ export function createCatalogService(database: Database): CatalogService {
           .returning();
         if (!barber) throw new Error('Barber creation failed.');
         await database.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'barber_created',
           entityType: 'barber_profile',
@@ -356,6 +368,7 @@ export function createCatalogService(database: Database): CatalogService {
           .returning();
         if (!barber) return null;
         await database.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'barber_updated',
           entityType: 'barber_profile',
@@ -394,10 +407,15 @@ export function createCatalogService(database: Database): CatalogService {
           .delete(barberServices)
           .where(eq(barberServices.barberId, barberId));
         if (uniqueIds.length)
-          await transaction
-            .insert(barberServices)
-            .values(uniqueIds.map((serviceId) => ({ barberId, serviceId })));
+          await transaction.insert(barberServices).values(
+            uniqueIds.map((serviceId) => ({
+              shopId: actor.shopId,
+              barberId,
+              serviceId,
+            })),
+          );
         await transaction.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'barber_services_updated',
           entityType: 'barber_profile',
@@ -417,6 +435,7 @@ export function createCatalogService(database: Database): CatalogService {
         if (hours.length)
           await transaction.insert(barberWorkingHours).values(
             hours.map((range) => ({
+              shopId: actor.shopId,
               barberId,
               dayOfWeek: range.dayOfWeek,
               startMinute: timeToMinute(range.startTime),
@@ -424,6 +443,7 @@ export function createCatalogService(database: Database): CatalogService {
             })),
           );
         await transaction.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'barber_working_hours_updated',
           entityType: 'barber_profile',
@@ -442,6 +462,7 @@ export function createCatalogService(database: Database): CatalogService {
         if (breaks.length)
           await transaction.insert(barberBreaks).values(
             breaks.map((range) => ({
+              shopId: actor.shopId,
               barberId,
               dayOfWeek: range.dayOfWeek,
               startMinute: timeToMinute(range.startTime),
@@ -449,6 +470,7 @@ export function createCatalogService(database: Database): CatalogService {
             })),
           );
         await transaction.insert(auditLogs).values({
+          ...auditScope(actor),
           actorStaffUserId: actor.id,
           action: 'barber_breaks_updated',
           entityType: 'barber_profile',
@@ -462,6 +484,7 @@ export function createCatalogService(database: Database): CatalogService {
       const [exception] = await database
         .insert(barberScheduleExceptions)
         .values({
+          shopId: actor.shopId,
           barberId,
           date: input.date,
           kind: input.kind,
@@ -474,6 +497,7 @@ export function createCatalogService(database: Database): CatalogService {
         .returning();
       if (!exception) throw new Error('Schedule exception creation failed.');
       await database.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: 'barber_exception_created',
         entityType: 'schedule_exception',
@@ -505,6 +529,7 @@ export function createCatalogService(database: Database): CatalogService {
         .returning();
       if (!exception) return null;
       await database.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: 'barber_exception_updated',
         entityType: 'schedule_exception',
@@ -525,6 +550,7 @@ export function createCatalogService(database: Database): CatalogService {
         .returning({ id: barberScheduleExceptions.id });
       if (!deleted.length) return false;
       await database.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: 'barber_exception_deleted',
         entityType: 'schedule_exception',

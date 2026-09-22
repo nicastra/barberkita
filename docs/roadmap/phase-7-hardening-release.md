@@ -1,8 +1,8 @@
 # Phase 7: Hardening and Release
 
-**Status: Active**
+**Status: Paused**
 
-[Previous: Phase 6](phase-6-dashboard-reporting.md) · [Roadmap index](README.md)
+[Previous: Phase 6](phase-6-dashboard-reporting.md) · [Roadmap index](README.md) · [Planned SaaS roadmap](saas/README.md)
 
 ## Objective
 
@@ -53,13 +53,15 @@ secure, observable, recoverable production release for one shop.
 - [x] Add environment-driven deployment configuration, health checks,
       structured logs, and a reviewed migration procedure.
 - [x] Document and test automated PostgreSQL backup and isolated restoration.
-- [ ] Complete the release checklist and acceptance run for staff and public
-      customer journeys.
+- Complete the release checklist and acceptance run for staff and public
+  customer journeys when the MVP release gate is resumed.
 
 The automated release journey, production image build and health smoke test,
-and isolated restore drill pass. The final checkbox remains an operator gate for
-the manual assistive-technology pass, production backup identifier, deployment
-approval, and recorded release decision.
+and isolated restore drill pass. The remaining operator gate covers the manual
+assistive-technology pass, production backup identifier, deployment approval,
+and recorded release decision. Phase 7 is paused by an explicit product
+decision while SaaS foundation work proceeds; no release claim is made until
+this gate is resumed and completed.
 
 ## Acceptance criteria
 

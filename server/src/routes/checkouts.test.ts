@@ -23,7 +23,6 @@ const checkout = { id: '00000000-0000-4000-8000-000000000010' } as CheckoutView;
 
 function authStub(user: AuthUser | null): AuthService {
   return {
-    setupOwner: async () => null,
     signIn: async () => null,
     signOut: async () => undefined,
     getUser: async () => user,
@@ -56,6 +55,7 @@ function appFor(user: AuthUser | null) {
     },
     authService: authStub(user),
     checkoutService: checkoutStub(),
+    enableLegacyRoutes: true,
   });
 }
 

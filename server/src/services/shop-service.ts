@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { auditLogs, shops } from '../db/schema';
 import type { AuthUser } from './auth-service';
+import { auditScope } from './audit-scope';
 
 export type ShopInput = {
   name: string;
@@ -44,6 +45,7 @@ export function createShopService(database: Database): ShopService {
         .returning();
       if (!shop) return null;
       await database.insert(auditLogs).values({
+        ...auditScope(actor),
         actorStaffUserId: actor.id,
         action: 'shop_updated',
         entityType: 'shop',

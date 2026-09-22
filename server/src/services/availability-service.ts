@@ -8,8 +8,9 @@ import {
   barberServices,
   barberWorkingHours,
   services,
+  shopMemberships,
   shops,
-  staffUsers,
+  users,
 } from '../db/schema';
 
 type MinuteRange = { start: number; end: number };
@@ -208,7 +209,10 @@ export function createAvailabilityService(
         eq(barberServices.serviceId, input.serviceId),
         eq(barberProfiles.shopId, input.shopId),
         eq(barberProfiles.active, true),
-        or(isNull(barberProfiles.staffUserId), eq(staffUsers.active, true))!,
+        or(
+          isNull(barberProfiles.staffUserId),
+          and(eq(users.active, true), eq(shopMemberships.active, true)),
+        )!,
       ];
       if (input.barberId)
         eligibilityConditions.push(eq(barberProfiles.id, input.barberId));
@@ -219,7 +223,14 @@ export function createAvailabilityService(
           barberServices,
           eq(barberProfiles.id, barberServices.barberId),
         )
-        .leftJoin(staffUsers, eq(barberProfiles.staffUserId, staffUsers.id))
+        .leftJoin(users, eq(barberProfiles.staffUserId, users.id))
+        .leftJoin(
+          shopMemberships,
+          and(
+            eq(shopMemberships.userId, users.id),
+            eq(shopMemberships.shopId, barberProfiles.shopId),
+          ),
+        )
         .where(and(...eligibilityConditions));
       if (barbers.length === 0)
         return {

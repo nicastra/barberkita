@@ -19,7 +19,6 @@ const staff: AuthUser = {
 
 function authStub(user: AuthUser | null): AuthService {
   return {
-    setupOwner: async () => null,
     signIn: async () => null,
     signOut: async () => undefined,
     getUser: async () => user,
@@ -41,10 +40,33 @@ function appFor(authService: AuthService) {
       }),
     },
     authService,
+    enableLegacyRoutes: true,
   });
 }
 
 describe('authentication boundaries', () => {
+  it('does not expose legacy global setup', async () => {
+    const response = await appFor(authStub(null)).request('/api/auth/setup', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(404);
+  });
+  it('keeps unscoped operational routes disabled by default', async () => {
+    const response = await createApp({
+      allowedOrigins: [],
+      healthService: {
+        check: async () => ({
+          status: 'ok',
+          services: { api: 'ok', database: 'ok' },
+          timestamp: new Date().toISOString(),
+        }),
+      },
+      authService: authStub(owner),
+    }).request('/api/bookings', {
+      headers: { Authorization: 'Bearer token' },
+    });
+    expect(response.status).toBe(404);
+  });
   it('returns a generic error for invalid credentials', async () => {
     const response = await appFor(authStub(null)).request('/api/auth/sign-in', {
       method: 'POST',
@@ -84,6 +106,40 @@ describe('authentication boundaries', () => {
     expect(response.headers.get('Set-Cookie')).toContain(
       'HttpOnly; Path=/; SameSite=Lax; Max-Age=604800; Secure',
     );
+  });
+
+  it('switches the active branch through the authenticated session', async () => {
+    const service = authStub(owner);
+    service.switchShop = async (_token, shopId) => ({ ...owner, shopId });
+    const response = await createAuthRoutes(service).request(
+      '/switch-shop/00000000-0000-4000-8000-000000000099',
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer token' },
+      },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      user: { shopId: '00000000-0000-4000-8000-000000000099' },
+    });
+  });
+
+  it('supports a recent password reauthentication check', async () => {
+    const service = authStub(owner);
+    service.reauthenticate = async () => true;
+    const response = await createAuthRoutes(service).request(
+      '/reauthenticate',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password: 'OwnerPassword123!' }),
+      },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ reauthenticated: true });
   });
 
   it('rejects an oversized body before authentication parsing', async () => {

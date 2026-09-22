@@ -16,7 +16,17 @@ trap cleanup EXIT
 
 docker compose -p "$project_name" -f compose.e2e.yaml up --detach --wait
 DATABASE_URL="$database_url" bun run db:migrate
+SEED_PASSWORD_MODE=e2e DATABASE_URL="$database_url" bun run db:seed
 TEST_DATABASE_URL="$database_url" bunx vitest run --config e2e/vitest.config.ts
+
+# Rehearse the restartable Phase 9 cutover against the representative seeded
+# single-shop installation. Reconciliation must pass before contraction, and
+# both migration and reconciliation remain safe after the legacy table is gone.
+DATABASE_URL="$database_url" bun run db:migrate-saas
+DATABASE_URL="$database_url" bun run db:reconcile-saas
+DATABASE_URL="$database_url" bun run db:contract-saas
+DATABASE_URL="$database_url" bun run db:migrate-saas
+DATABASE_URL="$database_url" bun run db:reconcile-saas
 
 docker compose -p "$project_name" -f compose.e2e.yaml exec -T database createdb -U cukurpro_e2e cukurpro_restore
 docker run --rm --network host \

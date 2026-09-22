@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { apiRequest } from './client';
+import { apiRequest, setActiveShopId } from './client';
 
 const userSchema = z.object({
   id: z.string(),
@@ -17,6 +17,9 @@ export function signIn(email: string, password: string) {
     method: 'POST',
     body: { email, password },
     schema: authResponseSchema,
+  }).then((result) => {
+    setActiveShopId(result.user.shopId);
+    return result;
   });
 }
 
@@ -25,9 +28,22 @@ export function signOut() {
     method: 'POST',
     acceptedStatuses: [204],
     schema: z.object({}).or(z.null()),
-  });
+  }).finally(() => setActiveShopId(null));
 }
 
 export function getSession() {
-  return apiRequest('/api/auth/me', { schema: authResponseSchema });
+  return apiRequest('/api/auth/me', { schema: authResponseSchema }).then(
+    (result) => {
+      setActiveShopId(result.user.shopId);
+      return result;
+    },
+  );
+}
+
+export function reauthenticate(password: string) {
+  return apiRequest('/api/auth/reauthenticate', {
+    method: 'POST',
+    body: { password },
+    schema: z.object({ reauthenticated: z.literal(true) }),
+  });
 }
