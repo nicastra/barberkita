@@ -17,10 +17,20 @@ import { createReportingService } from '../server/src/services/reporting-service
 import { createShopService } from '../server/src/services/shop-service';
 import { createTenantService } from '../server/src/services/tenant-service';
 import { createInvitationService } from '../server/src/services/invitation-service';
+import { createProviderOnboardingService } from '../server/src/services/provider-onboarding-service';
+import { createProviderDashboardService } from '../server/src/services/provider-dashboard-service';
+import { createOnboardingService } from '../server/src/services/onboarding-service';
+import { createSupportAccessService } from '../server/src/services/support-access-service';
 import { hashToken } from '../server/src/services/auth-service';
-import { invitations } from '../server/src/db/schema';
-import { organizations } from '../server/src/db/schema';
-import { eq } from '../server/node_modules/drizzle-orm';
+import {
+  invitations,
+  organizationSubscriptions,
+  organizations,
+  platformAdmins,
+  shops,
+  users,
+} from '../server/src/db/schema';
+import { eq, sql } from '../server/node_modules/drizzle-orm';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error('TEST_DATABASE_URL is required.');
@@ -57,6 +67,10 @@ const app = createApp({
   invitationService: createInvitationService(database, {
     hash: async (value) => `e2e:${value}`,
   }),
+  providerOnboardingService: createProviderOnboardingService(database),
+  providerDashboardService: createProviderDashboardService(database),
+  onboardingService: createOnboardingService(database),
+  supportAccessService: createSupportAccessService(database),
   secureCookies: true,
   // This fixture exercises the temporary compatibility surface as well as
   // the scoped routes; production keeps this opt-in disabled.
@@ -74,6 +88,10 @@ let paymentId = '';
 let bookingDate = '';
 let organizationId = '';
 let shopId = '';
+let providerSessionToken = '';
+let providerOrganizationId = '';
+let providerShopId = '';
+let providerOwnerToken = '';
 
 function request(
   path: string,
@@ -116,6 +134,35 @@ async function responseJson(
 }
 
 beforeAll(async () => {
+  const [provider] = await database
+    .insert(users)
+    .values({
+      name: 'Acceptance Provider',
+      email: 'acceptance-provider@release.test',
+      passwordHash: 'e2e:ProviderPassword123!',
+      active: true,
+    })
+    .onConflictDoUpdate({
+      target: users.email,
+      set: { active: true, passwordHash: 'e2e:ProviderPassword123!' },
+    })
+    .returning({ id: users.id });
+  if (!provider) throw new Error('Could not seed acceptance provider.');
+  await database
+    .insert(platformAdmins)
+    .values({ userId: provider.id })
+    .onConflictDoNothing();
+  const seededShop = await database
+    .select({ id: shops.id })
+    .from(shops)
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (!seededShop) throw new Error('Could not find seeded shop.');
+  await database.execute(sql`
+    insert into staff_users (id, user_id, shop_id, email, name, password_hash, role, active)
+    values (${provider.id}, ${provider.id}, ${seededShop.id}, 'acceptance-provider@release.test', 'Acceptance Provider', 'e2e:ProviderPassword123!', 'staff', true)
+    on conflict (id) do update set active = true, password_hash = excluded.password_hash
+  `);
   const health = await request('/api/health', 'GET', undefined, false);
   expect(health.status).toBe(200);
 });
@@ -433,6 +480,12 @@ describe('single-shop release workflow', () => {
         })
       ).status,
     ).toBe(200);
+    const checklist = await request(`/api/shops/${shopId}/onboarding`);
+    expect(checklist.status).toBe(200);
+    expect(
+      ((await responseJson(checklist)).checklist as { complete: boolean })
+        .complete,
+    ).toBe(true);
   });
 
   it('self-books publicly and exercises the operational lifecycle', async () => {
@@ -682,5 +735,159 @@ describe('single-shop release workflow', () => {
       .update(organizations)
       .set({ lifecycle: 'active' })
       .where(eq(organizations.id, organizationId));
+  });
+
+  it('covers provider authorization, onboarding, lifecycle sync, and archive isolation', async () => {
+    const denied = await request('/api/provider/dashboard');
+    expect(denied.status).toBe(403);
+
+    const providerSignIn = await request(
+      '/api/auth/sign-in',
+      'POST',
+      {
+        email: 'acceptance-provider@release.test',
+        password: 'ProviderPassword123!',
+      },
+      false,
+    );
+    expect(providerSignIn.status).toBe(200);
+    providerSessionToken =
+      providerSignIn.headers
+        .get('Set-Cookie')
+        ?.match(/cukurpro_session=([^;]+)/)?.[1] ?? '';
+    expect(providerSessionToken).toHaveLength(43);
+
+    const created = await requestAs(
+      providerSessionToken,
+      '/api/provider/organizations',
+      'POST',
+      {
+        organization: {
+          name: 'Acceptance Pilot',
+          slug: 'acceptance-pilot',
+          lifecycle: 'trialing',
+        },
+        shop: {
+          name: 'Acceptance Pilot Branch',
+          slug: 'acceptance-pilot-branch',
+          phone: '+62 21 555 0199',
+          email: 'acceptance-pilot@release.test',
+          address: 'Jl. Acceptance No. 1, Jakarta',
+          timezone: 'Asia/Jakarta',
+        },
+        owner: {
+          email: 'acceptance-pilot-owner@release.test',
+          expiresInHours: 72,
+        },
+      },
+    );
+    expect(created.status).toBe(201);
+    const createdPayload = (await responseJson(created)) as {
+      organization: { id: string };
+      shop: { id: string };
+      token: string;
+    };
+    providerOrganizationId = createdPayload.organization.id;
+    providerShopId = createdPayload.shop.id;
+    expect(createdPayload.token.length).toBeGreaterThan(40);
+
+    const accepted = await request(
+      `/api/invitations/${createdPayload.token}/accept`,
+      'POST',
+      { name: 'Acceptance Pilot Owner', password: 'PilotOwnerPassword123!' },
+      false,
+    );
+    expect(accepted.status).toBe(200);
+    const suspended = await requestAs(
+      providerSessionToken,
+      `/api/provider/organizations/${providerOrganizationId}/lifecycle`,
+      'PATCH',
+      { lifecycle: 'suspended', reason: 'Acceptance suspension' },
+    );
+    expect(suspended.status).toBe(200);
+    const subscription = await database
+      .select({ status: organizationSubscriptions.status })
+      .from(organizationSubscriptions)
+      .where(
+        eq(organizationSubscriptions.organizationId, providerOrganizationId),
+      )
+      .limit(1);
+    expect(subscription[0]?.status).toBe('suspended');
+
+    const archived = await requestAs(
+      providerSessionToken,
+      `/api/provider/organizations/${providerOrganizationId}/lifecycle`,
+      'PATCH',
+      { lifecycle: 'archived', reason: 'Acceptance archive' },
+    );
+    expect(archived.status).toBe(200);
+    const ownerSignIn = await request(
+      '/api/auth/sign-in',
+      'POST',
+      {
+        email: 'acceptance-pilot-owner@release.test',
+        password: 'PilotOwnerPassword123!',
+      },
+      false,
+    );
+    expect(ownerSignIn.status).toBe(200);
+    providerOwnerToken =
+      ownerSignIn.headers
+        .get('Set-Cookie')
+        ?.match(/cukurpro_session=([^;]+)/)?.[1] ?? '';
+    expect(
+      (
+        await requestAs(
+          providerOwnerToken,
+          `/api/shops/${providerShopId}/services`,
+        )
+      ).status,
+    ).toBe(403);
+
+    const providerDashboard = await requestAs(
+      providerSessionToken,
+      '/api/provider/dashboard',
+    );
+    expect(providerDashboard.status).toBe(200);
+    const serialized = JSON.stringify(await responseJson(providerDashboard));
+    for (const forbiddenField of [
+      'customer',
+      'booking',
+      'payment',
+      'revenue',
+      'performance',
+    ])
+      expect(serialized.toLowerCase()).not.toContain(forbiddenField);
+
+    // Keep the migration rehearsal representative of the pre-SaaS single-shop
+    // installation; this provider fixture is fully exercised above and then
+    // removed before the one-time migration step runs.
+    await database.execute(
+      sql`delete from tenant_audit_logs where organization_id = ${providerOrganizationId}`,
+    );
+    await database.execute(
+      sql`delete from onboarding_milestones where organization_id = ${providerOrganizationId}`,
+    );
+    await database.execute(
+      sql`delete from invitations where organization_id = ${providerOrganizationId}`,
+    );
+    await database.execute(
+      sql`delete from shop_memberships where organization_id = ${providerOrganizationId}`,
+    );
+    await database.execute(
+      sql`delete from organization_memberships where organization_id = ${providerOrganizationId}`,
+    );
+    await database.execute(
+      sql`delete from organization_subscriptions where organization_id = ${providerOrganizationId}`,
+    );
+    await database.execute(
+      sql`delete from staff_users where shop_id in (select id from shops where organization_id = ${providerOrganizationId})`,
+    );
+    await database.execute(
+      sql`delete from shops where organization_id = ${providerOrganizationId}`,
+    );
+    await database.execute(
+      sql`delete from organizations where id = ${providerOrganizationId}`,
+    );
   });
 });

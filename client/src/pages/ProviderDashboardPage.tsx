@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 
-import { getProviderDashboard, type ProviderDashboard } from '@/api/provider';
+import {
+  getProviderDashboard,
+  transitionProviderLifecycle,
+  type ProviderDashboard,
+} from '@/api/provider';
 import { ApiError } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ProviderActionsPanel } from '@/features/provider/ProviderActionsPanel';
 import {
   Card,
   CardContent,
@@ -25,6 +31,9 @@ export function ProviderDashboardPage() {
   const [dashboard, setDashboard] = useState<ProviderDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -43,7 +52,7 @@ export function ProviderDashboardPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, []);
+  }, [refreshKey]);
 
   if (loading)
     return (
@@ -67,6 +76,28 @@ export function ProviderDashboardPage() {
 
   if (!dashboard) return null;
 
+  const changeLifecycle = (
+    organizationId: string,
+    lifecycle: ProviderDashboard['organizations'][number]['lifecycle'],
+  ) => {
+    const reason = window.prompt(
+      `Reason for changing lifecycle to ${lifecycle}`,
+    );
+    if (!reason?.trim()) return;
+    setActionError(null);
+    setActionPending(organizationId);
+    void transitionProviderLifecycle(organizationId, lifecycle, reason.trim())
+      .then(() => getProviderDashboard().then(setDashboard))
+      .catch((reason: unknown) => {
+        setActionError(
+          reason instanceof ApiError
+            ? reason.message
+            : 'The lifecycle update could not be completed.',
+        );
+      })
+      .finally(() => setActionPending(null));
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -82,6 +113,11 @@ export function ProviderDashboardPage() {
         </p>
       </div>
 
+      <ProviderActionsPanel
+        organizations={dashboard.organizations}
+        onChanged={() => setRefreshKey((value) => value + 1)}
+      />
+
       <section aria-labelledby="organizations-heading" className="space-y-4">
         <div>
           <h2 id="organizations-heading" className="text-xl font-semibold">
@@ -92,6 +128,11 @@ export function ProviderDashboardPage() {
             {dashboard.organizations.length === 1 ? '' : 's'} provisioned
           </p>
         </div>
+        {actionError && (
+          <p className="text-destructive text-sm" role="alert">
+            {actionError}
+          </p>
+        )}
         {dashboard.organizations.length === 0 ? (
           <Card>
             <CardContent className="text-muted-foreground pt-6 text-sm">
@@ -111,6 +152,10 @@ export function ProviderDashboardPage() {
                       {organization.counts.activeUsers} active user
                       {organization.counts.activeUsers === 1 ? '' : 's'}
                     </CardDescription>
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      Onboarding: {organization.onboarding.completed}/
+                      {organization.onboarding.total} milestones
+                    </p>
                   </div>
                   <Badge variant={lifecycleVariant(organization.lifecycle)}>
                     {organization.lifecycle}
@@ -134,6 +179,43 @@ export function ProviderDashboardPage() {
                       </li>
                     ))}
                   </ul>
+                  {organization.lifecycle !== 'archived' && (
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {organization.lifecycle === 'suspended' ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={actionPending === organization.id}
+                          onClick={() =>
+                            changeLifecycle(organization.id, 'active')
+                          }
+                        >
+                          Reactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={actionPending === organization.id}
+                          onClick={() =>
+                            changeLifecycle(organization.id, 'suspended')
+                          }
+                        >
+                          Suspend
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={actionPending === organization.id}
+                        onClick={() =>
+                          changeLifecycle(organization.id, 'archived')
+                        }
+                      >
+                        Archive
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}

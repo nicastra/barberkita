@@ -2,6 +2,7 @@ import { createMiddleware } from 'hono/factory';
 
 import type { AuthVariables } from './auth';
 import type { TenantContext, TenantService } from '../services/tenant-service';
+import type { SupportAccessService } from '../services/support-access-service';
 
 export type TenantVariables = AuthVariables & { tenant: TenantContext };
 
@@ -15,7 +16,10 @@ function forbidden(
 }
 
 /** Require the authenticated user to be an active member of the requested shop. */
-export function requireTenantContext(tenantService: TenantService) {
+export function requireTenantContext(
+  tenantService: TenantService,
+  supportAccessService?: SupportAccessService,
+) {
   return createMiddleware<{ Variables: TenantVariables }>(
     async (context, next) => {
       const user = context.get('user');
@@ -28,7 +32,87 @@ export function requireTenantContext(tenantService: TenantService) {
           ),
           400,
         );
-      const tenant = await tenantService.resolve(user.id, shopId);
+      const requestHeader = (...names: string[]) => {
+        for (const name of names) {
+          const value =
+            context.req.header(name) ?? context.req.raw.headers.get(name);
+          if (value?.trim()) return value.trim();
+        }
+        return undefined;
+      };
+      const grantId = requestHeader(
+        'X-CukurPro-Support-Grant',
+        'X-Support-Grant-Id',
+      );
+      const organizationId = requestHeader(
+        'X-CukurPro-Support-Organization',
+        'X-Support-Organization-Id',
+      );
+      let tenant: TenantContext | null = null;
+      if (grantId || organizationId) {
+        if (!grantId || !organizationId || !supportAccessService)
+          return context.json(
+            forbidden(
+              'A complete support context is required.',
+              'INVALID_SCOPE',
+            ),
+            403,
+          );
+        if (!(await tenantService.isPlatformAdmin(user.id)))
+          return context.json(
+            forbidden('Platform administrator access is required.'),
+            403,
+          );
+        try {
+          const grant = await supportAccessService.authorize(
+            user.id,
+            grantId,
+            organizationId,
+          );
+          tenant = tenantService.resolveSupport
+            ? await tenantService.resolveSupport(
+                user.id,
+                organizationId,
+                shopId,
+              )
+            : null;
+          if (!tenant)
+            return context.json(
+              forbidden('The support grant does not cover this shop.'),
+              403,
+            );
+          context.set('support', {
+            grantId: grant.id,
+            organizationId: grant.organizationId,
+            expiresAt: grant.expiresAt.toISOString(),
+            breakGlass: grant.breakGlass,
+          });
+          if (supportAccessService.recordOperationalAction)
+            await supportAccessService.recordOperationalAction(
+              user.id,
+              grant.id,
+              grant.organizationId,
+              `${context.req.method} ${context.req.path}`,
+            );
+        } catch (error) {
+          if (
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            typeof error.code === 'string'
+          ) {
+            const message =
+              'message' in error && typeof error.message === 'string'
+                ? error.message
+                : 'Support access is not authorized.';
+            return context.json(
+              { error: { code: error.code, message } },
+              error.code === 'SUPPORT_GRANT_NOT_FOUND' ? 404 : 403,
+            );
+          }
+          throw error;
+        }
+      } else tenant = await tenantService.resolve(user.id, shopId);
       if (!tenant)
         return context.json(
           forbidden('You do not have access to this shop.'),

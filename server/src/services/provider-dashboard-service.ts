@@ -5,6 +5,7 @@ import {
   organizationMemberships,
   organizationSubscriptions,
   organizations,
+  onboardingMilestones,
   platformAdmins,
   shops,
   tenantAuditLogs,
@@ -21,6 +22,7 @@ export type ProviderDashboard = {
     plan: null;
     entitlements: string[];
     counts: { activeUsers: number; shops: number };
+    onboarding: { completed: number; total: number };
     branches: Array<{ id: string; name: string; slug: string | null }>;
   }>;
   recentActivity: Array<{
@@ -69,6 +71,7 @@ export function createProviderDashboardService(
         shopRows,
         userCounts,
         shopCounts,
+        milestoneCounts,
         subscriptionRows,
         activity,
       ] = await Promise.all([
@@ -111,6 +114,13 @@ export function createProviderDashboardService(
           })
           .from(shops)
           .groupBy(shops.organizationId),
+        database
+          .select({
+            organizationId: onboardingMilestones.organizationId,
+            count: count(onboardingMilestones.id),
+          })
+          .from(onboardingMilestones)
+          .groupBy(onboardingMilestones.organizationId),
         subscriptionQuery,
         database
           .select({
@@ -133,6 +143,9 @@ export function createProviderDashboardService(
       );
       const shopsByOrganization = new Map(
         shopCounts.map((row) => [row.organizationId, Number(row.count)]),
+      );
+      const milestonesByOrganization = new Map(
+        milestoneCounts.map((row) => [row.organizationId, Number(row.count)]),
       );
       const subscriptionsByOrganization = new Map(
         subscriptionRows.map((row) => [row.organizationId, row.status]),
@@ -161,6 +174,10 @@ export function createProviderDashboardService(
           counts: {
             activeUsers: usersByOrganization.get(organization.id) ?? 0,
             shops: shopsByOrganization.get(organization.id) ?? 0,
+          },
+          onboarding: {
+            completed: milestonesByOrganization.get(organization.id) ?? 0,
+            total: 6,
           },
           branches: branchesByOrganization.get(organization.id) ?? [],
         })),

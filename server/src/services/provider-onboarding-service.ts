@@ -5,9 +5,12 @@ import {
   onboardingMilestones,
   organizationSubscriptions,
   organizations,
+  platformAdmins,
   shops,
   tenantAuditLogs,
+  users,
 } from '../db/schema';
+import { and, eq } from 'drizzle-orm';
 import { hashToken } from './auth-service';
 
 export interface ProviderOnboardingInput {
@@ -25,6 +28,14 @@ export interface ProviderOnboardingInput {
     timezone: string;
   };
   owner: { email: string; expiresInHours: number };
+}
+export class ProviderOnboardingError extends Error {
+  public constructor(
+    public readonly code: 'PROVIDER_ACCESS_DENIED',
+    message: string,
+  ) {
+    super(message);
+  }
 }
 export interface ProviderOnboardingService {
   createOrganization(
@@ -46,6 +57,20 @@ export function createProviderOnboardingService(
     async createOrganization(actorUserId, input) {
       const token = randomBytes(32).toString('base64url');
       return database.transaction(async (tx) => {
+        const provider = await tx
+          .select({ userId: platformAdmins.userId })
+          .from(platformAdmins)
+          .innerJoin(users, eq(platformAdmins.userId, users.id))
+          .where(
+            and(eq(platformAdmins.userId, actorUserId), eq(users.active, true)),
+          )
+          .limit(1)
+          .then((rows) => rows[0]);
+        if (!provider)
+          throw new ProviderOnboardingError(
+            'PROVIDER_ACCESS_DENIED',
+            'Platform administrator access is required.',
+          );
         const [organization] = await tx
           .insert(organizations)
           .values({

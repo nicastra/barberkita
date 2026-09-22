@@ -3,10 +3,18 @@ import { createMiddleware } from 'hono/factory';
 import type { AuthService, AuthUser } from '../services/auth-service';
 import type { TenantContext } from '../services/tenant-service';
 
+export interface SupportContext {
+  grantId: string;
+  organizationId: string;
+  expiresAt: string;
+  breakGlass: boolean;
+}
+
 export type AuthVariables = {
   user: AuthUser;
   sessionToken: string;
   tenant?: TenantContext;
+  support?: SupportContext;
 };
 
 export function requireAuth(authService: AuthService) {

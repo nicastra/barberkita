@@ -4,6 +4,7 @@ import type { Database } from '../db/client';
 import { withTenantDatabaseContext } from '../db/tenant-context';
 import {
   organizationMemberships,
+  organizationSubscriptions,
   onboardingMilestones,
   organizations,
   platformAdmins,
@@ -23,7 +24,9 @@ export type OrganizationLifecycle =
 export class LifecycleDomainError extends Error {
   public constructor(
     public readonly code:
-      'ORGANIZATION_NOT_FOUND' | 'INVALID_LIFECYCLE_TRANSITION',
+      | 'ORGANIZATION_NOT_FOUND'
+      | 'INVALID_LIFECYCLE_TRANSITION'
+      | 'PROVIDER_ACCESS_DENIED',
     message: string,
   ) {
     super(message);
@@ -68,8 +71,58 @@ export interface OrganizationShopView {
   timezone: string;
 }
 
+type TenantTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+async function reconcileExpiredTrial(
+  transaction: TenantTransaction,
+  organizationId: string,
+  actorUserId: string,
+): Promise<void> {
+  const subscription = await transaction
+    .select()
+    .from(organizationSubscriptions)
+    .where(eq(organizationSubscriptions.organizationId, organizationId))
+    .for('update')
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (
+    !subscription ||
+    subscription.status !== 'trialing' ||
+    subscription.trialEndsAt > new Date()
+  )
+    return;
+  const organization = await transaction
+    .select({ lifecycle: organizations.lifecycle })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .for('update')
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (!organization || organization.lifecycle !== 'trialing') return;
+  await transaction
+    .update(organizations)
+    .set({ lifecycle: 'suspended', updatedAt: new Date() })
+    .where(eq(organizations.id, organizationId));
+  await transaction
+    .update(organizationSubscriptions)
+    .set({ status: 'suspended', updatedAt: new Date() })
+    .where(eq(organizationSubscriptions.id, subscription.id));
+  await transaction.insert(tenantAuditLogs).values({
+    organizationId,
+    actorUserId,
+    action: 'trial_expired',
+    reason: 'Trial end timestamp reached.',
+    metadata: { previousLifecycle: 'trialing', nextLifecycle: 'suspended' },
+  });
+}
+
 export interface TenantService {
   resolve(userId: string, shopId: string): Promise<TenantContext | null>;
+  resolveSupport?(
+    providerUserId: string,
+    organizationId: string,
+    shopId: string,
+  ): Promise<TenantContext | null>;
   list(userId: string): Promise<TenantMembershipView[]>;
   getOrganization(
     userId: string,
@@ -120,8 +173,20 @@ export function createTenantService(database: Database): TenantService {
       const row = await withTenantDatabaseContext(
         database,
         { userId, shopId },
-        async (transaction) =>
-          transaction
+        async (transaction) => {
+          const scope = await transaction
+            .select({ organizationId: shops.organizationId })
+            .from(shops)
+            .where(eq(shops.id, shopId))
+            .limit(1)
+            .then((rows) => rows[0]);
+          if (scope?.organizationId)
+            await reconcileExpiredTrial(
+              transaction,
+              scope.organizationId,
+              userId,
+            );
+          return transaction
             .select({
               organizationId: organizations.id,
               shopId: shops.id,
@@ -158,7 +223,8 @@ export function createTenantService(database: Database): TenantService {
               ),
             )
             .limit(1)
-            .then((rows) => rows[0]),
+            .then((rows) => rows[0]);
+        },
       );
 
       if (!row || !row.organizationId) return null;
@@ -168,6 +234,39 @@ export function createTenantService(database: Database): TenantService {
         shopId: row.shopId,
         organizationRole: row.organizationRole,
         shopRole: row.shopRole,
+        organizationLifecycle: row.organizationLifecycle,
+      };
+    },
+    async resolveSupport(providerUserId, organizationId, shopId) {
+      if (!(await this.isPlatformAdmin(providerUserId))) return null;
+      const row = await withTenantDatabaseContext(
+        database,
+        { userId: providerUserId, organizationId, shopId },
+        (transaction) =>
+          transaction
+            .select({
+              organizationId: organizations.id,
+              shopId: shops.id,
+              organizationLifecycle: organizations.lifecycle,
+            })
+            .from(shops)
+            .innerJoin(
+              organizations,
+              eq(shops.organizationId, organizations.id),
+            )
+            .where(
+              and(eq(shops.id, shopId), eq(organizations.id, organizationId)),
+            )
+            .limit(1)
+            .then((rows) => rows[0]),
+      );
+      if (!row) return null;
+      return {
+        userId: providerUserId,
+        organizationId: row.organizationId,
+        shopId: row.shopId,
+        organizationRole: 'organization_owner',
+        shopRole: 'shop_manager',
         organizationLifecycle: row.organizationLifecycle,
       };
     },
@@ -216,6 +315,7 @@ export function createTenantService(database: Database): TenantService {
         database,
         { userId, organizationId },
         async (transaction) => {
+          await reconcileExpiredTrial(transaction, organizationId, userId);
           const row = await transaction
             .select({
               id: organizations.id,
@@ -398,6 +498,20 @@ export function createTenantService(database: Database): TenantService {
       reason,
     ) {
       return database.transaction(async (transaction) => {
+        const provider = await transaction
+          .select({ userId: platformAdmins.userId })
+          .from(platformAdmins)
+          .innerJoin(users, eq(platformAdmins.userId, users.id))
+          .where(
+            and(eq(platformAdmins.userId, actorUserId), eq(users.active, true)),
+          )
+          .limit(1)
+          .then((rows) => rows[0]);
+        if (!provider)
+          throw new LifecycleDomainError(
+            'PROVIDER_ACCESS_DENIED',
+            'Platform administrator access is required.',
+          );
         const current = await transaction
           .select()
           .from(organizations)
@@ -429,11 +543,18 @@ export function createTenantService(database: Database): TenantService {
             `Cannot transition an ${current.lifecycle} organization to ${nextLifecycle}.`,
           );
 
-        if (current.lifecycle === nextLifecycle)
+        if (current.lifecycle === nextLifecycle) {
+          await transaction
+            .update(organizationSubscriptions)
+            .set({ status: nextLifecycle, updatedAt: new Date() })
+            .where(
+              eq(organizationSubscriptions.organizationId, organizationId),
+            );
           return {
             organization: current,
             previousLifecycle: current.lifecycle,
           };
+        }
 
         const [organization] = await transaction
           .update(organizations)
@@ -445,6 +566,20 @@ export function createTenantService(database: Database): TenantService {
             'ORGANIZATION_NOT_FOUND',
             'Organization not found.',
           );
+        const [subscription] = await transaction
+          .update(organizationSubscriptions)
+          .set({ status: nextLifecycle, updatedAt: new Date() })
+          .where(eq(organizationSubscriptions.organizationId, organizationId))
+          .returning();
+        if (!subscription) {
+          const startedAt = new Date();
+          await transaction.insert(organizationSubscriptions).values({
+            organizationId,
+            status: nextLifecycle,
+            trialStartedAt: startedAt,
+            trialEndsAt: startedAt,
+          });
+        }
         await transaction.insert(tenantAuditLogs).values({
           organizationId,
           actorUserId,
@@ -453,6 +588,16 @@ export function createTenantService(database: Database): TenantService {
           metadata: {
             previousLifecycle: current.lifecycle,
             nextLifecycle,
+          },
+        });
+        await transaction.insert(tenantAuditLogs).values({
+          organizationId,
+          actorUserId,
+          action: 'subscription_status_synchronized',
+          reason,
+          metadata: {
+            previousStatus: current.lifecycle,
+            nextStatus: nextLifecycle,
           },
         });
         return { organization, previousLifecycle: current.lifecycle };

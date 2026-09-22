@@ -59,6 +59,12 @@ export interface SupportAccessService {
     grantId: string,
     organizationId: string,
   ): Promise<SupportGrantView>;
+  recordOperationalAction?(
+    providerUserId: string,
+    grantId: string,
+    organizationId: string,
+    action: string,
+  ): Promise<void>;
 }
 
 function view(row: typeof supportGrants.$inferSelect): SupportGrantView {
@@ -339,7 +345,62 @@ export function createSupportAccessService(
           'SUPPORT_ACCESS_DENIED',
           'Platform administrator access is required.',
         );
-      return database.transaction(async (transaction) => {
+      const result = await database.transaction(async (transaction) => {
+        const grant = await transaction
+          .select()
+          .from(supportGrants)
+          .where(
+            and(
+              eq(supportGrants.id, grantId),
+              eq(supportGrants.organizationId, organizationId),
+              eq(supportGrants.providerUserId, providerUserId),
+            ),
+          )
+          .for('update')
+          .limit(1)
+          .then((rows) => rows[0]);
+        if (!grant)
+          throw new SupportAccessError(
+            'SUPPORT_GRANT_NOT_FOUND',
+            'Support grant is not valid for this organization.',
+          );
+        if (grant.status !== 'active')
+          throw new SupportAccessError(
+            'SUPPORT_GRANT_INVALID',
+            'This support grant is not active.',
+          );
+        if (grant.expiresAt <= now()) {
+          const [expired] = await transaction
+            .update(supportGrants)
+            .set({ status: 'expired' })
+            .where(eq(supportGrants.id, grant.id))
+            .returning();
+          if (expired)
+            await appendEvent(transaction, expired, providerUserId, 'expired');
+          return { grant: view(expired ?? grant), expired: true as const };
+        }
+        await appendEvent(transaction, grant, providerUserId, 'entry');
+        return { grant: view(grant), expired: false as const };
+      });
+      if (result.expired)
+        throw new SupportAccessError(
+          'SUPPORT_GRANT_EXPIRED',
+          'This support grant has expired.',
+        );
+      return result.grant;
+    },
+    async recordOperationalAction(
+      providerUserId,
+      grantId,
+      organizationId,
+      action,
+    ) {
+      if (!(await isProvider(database, providerUserId)))
+        throw new SupportAccessError(
+          'SUPPORT_ACCESS_DENIED',
+          'Platform administrator access is required.',
+        );
+      await database.transaction(async (transaction) => {
         const grant = await transaction
           .select()
           .from(supportGrants)
@@ -376,7 +437,13 @@ export function createSupportAccessService(
             'This support grant has expired.',
           );
         }
-        return view(grant);
+        await appendEvent(
+          transaction,
+          grant,
+          providerUserId,
+          'operational_action',
+          action,
+        );
       });
     },
   };

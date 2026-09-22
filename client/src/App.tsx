@@ -256,7 +256,11 @@ export default function App() {
             }
           />
           <Route path="s/:shopSlug" element={<PublicBookingPage />} />
-          <Route element={<ProtectedRoute user={user} ready={sessionReady} />}>
+          <Route
+            element={
+              <ProtectedRoute user={user} ready={sessionReady} providerOnly />
+            }
+          >
             <Route path="provider" element={<ProviderDashboardPage />} />
           </Route>
           <Route element={<ProtectedRoute user={user} ready={sessionReady} />}>

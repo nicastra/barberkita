@@ -1,6 +1,8 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 
 import type { AuthUser } from '@/api/auth';
+import { getProviderMe } from '@/api/provider';
 import {
   Card,
   CardDescription,
@@ -12,14 +14,34 @@ interface ProtectedRouteProps {
   user: AuthUser | null;
   ready: boolean;
   ownerOnly?: boolean;
+  providerOnly?: boolean;
 }
 
 export function ProtectedRoute({
   user,
   ready,
   ownerOnly = false,
+  providerOnly = false,
 }: ProtectedRouteProps) {
   const location = useLocation();
+  const [providerAllowed, setProviderAllowed] = useState<boolean | null>(
+    providerOnly ? null : true,
+  );
+
+  useEffect(() => {
+    if (!providerOnly || !user) return;
+    let active = true;
+    void getProviderMe()
+      .then(() => {
+        if (active) setProviderAllowed(true);
+      })
+      .catch(() => {
+        if (active) setProviderAllowed(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [providerOnly, user]);
 
   if (!ready) {
     return (
@@ -41,6 +63,33 @@ export function ProtectedRoute({
         replace
         state={{ from: `${location.pathname}${location.search}` }}
       />
+    );
+  }
+
+  if (providerOnly && providerAllowed === null) {
+    return (
+      <Card aria-live="polite">
+        <CardHeader>
+          <CardTitle>Checking provider access</CardTitle>
+          <CardDescription>
+            Confirming your platform administrator registration…
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  if (providerOnly && !providerAllowed) {
+    return (
+      <Card role="alert">
+        <CardHeader>
+          <CardTitle>Provider access required</CardTitle>
+          <CardDescription>
+            This console is available only to registered platform
+            administrators.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 

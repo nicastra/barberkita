@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { AuthUser } from '../services/auth-service';
 import type { TenantService } from '../services/tenant-service';
+import type { SupportAccessService } from '../services/support-access-service';
 import { requirePlatformAdmin, requireTenantContext } from './tenant';
 
 const user: AuthUser = {
@@ -22,7 +23,7 @@ const tenant = {
   organizationLifecycle: 'active' as const,
 };
 
-function appFor(service: TenantService) {
+function appFor(service: TenantService, support?: SupportAccessService) {
   const app = new Hono<{
     Variables: {
       user: AuthUser;
@@ -35,7 +36,7 @@ function appFor(service: TenantService) {
     context.set('sessionToken', 'test-token');
     await next();
   });
-  app.use('/shops/:shopId/*', requireTenantContext(service));
+  app.use('/shops/:shopId/*', requireTenantContext(service, support));
   app.get('/shops/:shopId/resource', (context) =>
     context.json({ tenant: context.get('tenant') }),
   );
@@ -46,6 +47,63 @@ function appFor(service: TenantService) {
 }
 
 describe('tenant authorization middleware', () => {
+  it('accepts an active provider support grant only for its target organization', async () => {
+    const support: SupportAccessService = {
+      request: async () => {
+        throw new Error('unused');
+      },
+      approve: async () => {
+        throw new Error('unused');
+      },
+      createBreakGlass: async () => {
+        throw new Error('unused');
+      },
+      revoke: async () => {
+        throw new Error('unused');
+      },
+      listForOrganization: async () => [],
+      listForProvider: async () => [],
+      authorize: async (_provider, _grant, organizationId) => ({
+        id: '00000000-0000-4000-8000-000000000004',
+        organizationId,
+        providerUserId: user.id,
+        requestedByUserId: user.id,
+        approvedByUserId: user.id,
+        reason: 'support',
+        status: 'active' as const,
+        breakGlass: false,
+        expiresAt: new Date(Date.now() + 60_000),
+        approvedAt: new Date(),
+        revokedAt: null,
+        createdAt: new Date(),
+      }),
+    };
+    const app = appFor(
+      {
+        resolve: async () => null,
+        resolveSupport: async (_provider, organizationId, shopId) =>
+          organizationId === tenant.organizationId && shopId === tenant.shopId
+            ? { ...tenant, userId: user.id }
+            : null,
+        list: async () => [],
+        getOrganization: async () => null,
+        listOrganizationShops: async () => null,
+        isPlatformAdmin: async () => true,
+      },
+      support,
+    );
+    const response = await app.request(`/shops/${user.shopId}/resource`, {
+      headers: {
+        'X-CukurPro-Support-Grant': '00000000-0000-4000-8000-000000000004',
+        'X-CukurPro-Support-Organization': tenant.organizationId,
+      },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      tenant: { organizationId: tenant.organizationId },
+    });
+  });
+
   it('rejects a shop scope the user does not belong to', async () => {
     const app = appFor({
       resolve: async () => null,

@@ -17,7 +17,10 @@ import {
   tenantOrganizationParamsSchema,
 } from '../schemas/tenant';
 import type { AuthService } from '../services/auth-service';
-import type { ProviderOnboardingService } from '../services/provider-onboarding-service';
+import {
+  ProviderOnboardingError,
+  type ProviderOnboardingService,
+} from '../services/provider-onboarding-service';
 import type { ProviderDashboardService } from '../services/provider-dashboard-service';
 import {
   SupportAccessError,
@@ -179,7 +182,11 @@ export function createProviderRoutes(
           if (error instanceof LifecycleDomainError)
             return context.json(
               { error: { code: error.code, message: error.message } },
-              error.code === 'ORGANIZATION_NOT_FOUND' ? 404 : 409,
+              error.code === 'ORGANIZATION_NOT_FOUND'
+                ? 404
+                : error.code === 'PROVIDER_ACCESS_DENIED'
+                  ? 403
+                  : 409,
             );
           throw error;
         }
@@ -190,14 +197,24 @@ export function createProviderRoutes(
       '/organizations',
       requireRecentReauthentication(authService),
       zValidator('json', providerOrganizationCreateSchema),
-      async (context) =>
-        context.json(
-          await onboardingService.createOrganization(
-            context.get('user').id,
-            context.req.valid('json'),
-          ),
-          201,
-        ),
+      async (context) => {
+        try {
+          return context.json(
+            await onboardingService.createOrganization(
+              context.get('user').id,
+              context.req.valid('json'),
+            ),
+            201,
+          );
+        } catch (error) {
+          if (error instanceof ProviderOnboardingError)
+            return context.json(
+              { error: { code: error.code, message: error.message } },
+              403,
+            );
+          throw error;
+        }
+      },
     );
   return app;
 }

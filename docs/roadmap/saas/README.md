@@ -5,11 +5,12 @@ multi-tenant SaaS operated by the CukurPro provider. It is separate from the
 [single-shop MVP roadmap](../README.md), which remains the implementation and
 release history for Phases 0 through 7.
 
-Phase 10 is the only active phase across both roadmaps. Phase 9's migration and
-authentication gates are complete after verification of migration, authorization,
-and acceptance behavior. Phase 7's single-shop release gate is explicitly paused
-and remains required before a production MVP release. Phase 8's foundation work
-is complete.
+Phase 11 is the active phase across the SaaS roadmap. Phase 10's provider,
+onboarding, lifecycle, support-access, and PostgreSQL acceptance gates are
+complete. Phase 9's migration and authentication gates are complete after
+verification of migration, authorization, and acceptance behavior. Phase 7's
+single-shop release gate is explicitly paused and remains required before a
+production MVP release. Phase 8's foundation work is complete.
 
 ## Target hierarchy
 
@@ -33,8 +34,8 @@ organizations and shops without duplicated credentials.
 | ---------------------------------------- | ------------------------------------------ | --------- |
 | [8](phase-8-multi-tenant-foundation.md)  | Multi-Tenant Foundation                    | Completed |
 | [9](phase-9-migration-authentication.md) | Migration and SaaS Authentication          | Completed |
-| [10](phase-10-provider-onboarding.md)    | Provider Console and Pilot Onboarding      | Active    |
-| [11](phase-11-plans-billing.md)          | Plans, Limits, and Manual Billing          | Planned   |
+| [10](phase-10-provider-onboarding.md)    | Provider Console and Pilot Onboarding      | Completed |
+| [11](phase-11-plans-billing.md)          | Plans, Limits, and Manual Billing          | Active    |
 | [12](phase-12-storefront-dashboard.md)   | Public Storefront and Dashboard Experience | Planned   |
 | [13](phase-13-receipts-pos.md)           | Printable Receipts and POS Improvements    | Planned   |
 | [14](phase-14-barber-performance.md)     | Barber Performance and Reporting           | Planned   |
@@ -46,7 +47,7 @@ organizations and shops without duplicated credentials.
 - Exactly one phase may be `Active` across the MVP and SaaS roadmaps.
 - A phase may be explicitly `Paused` by a product decision. Its unfinished work
   remains pending and it cannot carry unchecked task boxes.
-- Phase 10 is active by the current roadmap decision. Before a production MVP
+- Phase 11 is active by the current roadmap decision. Before a production MVP
   release, resume Phase 7, complete its manual gate, and record the release
   decision.
 - Planned phases use ordinary deliverable bullets. When a phase becomes active,
@@ -130,4 +131,4 @@ in regression coverage afterward:
 - Tenancy precedes storefront, receipts, and advanced reports so those features
   are not built twice around the single-shop assumption.
 
-[MVP roadmap](../README.md) · [Current: Phase 10](phase-10-provider-onboarding.md)
+[MVP roadmap](../README.md) · [Current: Phase 11](phase-11-plans-billing.md)

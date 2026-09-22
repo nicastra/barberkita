@@ -1,5 +1,7 @@
 # Phase 11: Plans, Limits, and Manual Billing
 
+**Status: Active**
+
 **Status: Planned**
 
 [Previous: Phase 10](phase-10-provider-onboarding.md) · [SaaS roadmap](README.md) · [Next: Phase 12](phase-12-storefront-dashboard.md)

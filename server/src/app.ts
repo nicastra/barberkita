@@ -132,7 +132,12 @@ export function createApp({
     cors({
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : ''),
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization'],
+      allowHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Support-Grant-Id',
+        'X-Support-Organization-Id',
+      ],
       credentials: true,
     }),
   );
@@ -209,7 +214,7 @@ export function createApp({
       [
         requireAuth(authService),
         zValidator('param', tenantShopParamsSchema),
-        requireTenantContext(tenantService),
+        requireTenantContext(tenantService, supportAccessService),
       ] as const;
     const protectShopPath = (path: string) => {
       app.use(path, ...scope());
